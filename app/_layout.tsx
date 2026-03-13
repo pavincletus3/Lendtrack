@@ -1,57 +1,79 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { useColorScheme } from 'react-native';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { Provider as PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import '@/lib/i18n';
+import { useAuthStore } from '@/store/authStore';
+import { useSettingsStore } from '@/store/settingsStore';
+import { Colors } from '@/constants/Colors';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
-
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+  const initialize = useAuthStore((s) => s.initialize);
+  const initialized = useAuthStore((s) => s.initialized);
+  const user = useAuthStore((s) => s.user);
+  const loadFromStorage = useSettingsStore((s) => s.loadFromStorage);
+  const themePreference = useSettingsStore((s) => s.theme);
+  const systemScheme = useColorScheme();
+  const router = useRouter();
+  const segments = useSegments();
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+    loadFromStorage();
+    const unsub = initialize();
+    return unsub;
+  }, []);
 
   useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
+    if (!initialized) return;
+    SplashScreen.hideAsync();
+
+    const inAuthGroup = segments[0] === '(auth)';
+
+    if (!user && !inAuthGroup) {
+      router.replace('/(auth)/login');
+    } else if (user && inAuthGroup) {
+      router.replace('/(app)/dashboard');
     }
-  }, [loaded]);
+  }, [initialized, user, segments]);
 
-  if (!loaded) {
-    return null;
-  }
+  const isDark =
+    themePreference === 'dark' ||
+    (themePreference === 'system' && systemScheme === 'dark');
 
-  return <RootLayoutNav />;
-}
+  const paperTheme = isDark
+    ? {
+        ...MD3DarkTheme,
+        colors: {
+          ...MD3DarkTheme.colors,
+          primary: Colors.dark.primary,
+          background: Colors.dark.background,
+          surface: Colors.dark.card,
+        },
+      }
+    : {
+        ...MD3LightTheme,
+        colors: {
+          ...MD3LightTheme.colors,
+          primary: Colors.light.primary,
+          background: Colors.light.background,
+          surface: Colors.light.card,
+        },
+      };
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  if (!initialized) return null;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+    <PaperProvider theme={paperTheme}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
       </Stack>
-    </ThemeProvider>
+    </PaperProvider>
   );
 }
