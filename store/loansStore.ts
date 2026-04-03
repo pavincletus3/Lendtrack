@@ -41,17 +41,21 @@ export const useLoansStore = create<LoansState>((set, get) => ({
 
     const unsubLoans = subscribeLoans(userId, (newLoans) => {
       loans = newLoans;
+      const loanIds = new Set(loans.map((l) => l.id));
+      payments = payments.filter((p) => loanIds.has(p.loanId));
       set({
         loans: newLoans,
+        payments,
         stats: computeDashboardStats(loans, payments, overdueAlertDays),
         loading: false,
       });
     });
 
     const unsubPayments = subscribePayments(userId, (newPayments) => {
-      payments = newPayments;
+      const loanIds = new Set(loans.map((l) => l.id));
+      payments = newPayments.filter((p) => loanIds.has(p.loanId));
       set({
-        payments: newPayments,
+        payments,
         stats: computeDashboardStats(loans, payments, overdueAlertDays),
       });
     });

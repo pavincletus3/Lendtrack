@@ -183,7 +183,7 @@ const styles = (colors: any) =>
       borderBottomColor: colors.border,
     },
     backBtn: { width: 40 },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+    headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text, textAlign: 'center' },
     form: { padding: 20, paddingBottom: 40, gap: 12 },
     infoCard: {
       backgroundColor: colors.card,

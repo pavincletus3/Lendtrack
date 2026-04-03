@@ -13,9 +13,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lendtrack.app"
     },
     "android": {
+      "package": "com.lendtrack.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,10 +43,27 @@
           "color": "#3B82F6",
           "sounds": []
         }
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.355259328072-mhcd6lbgb3mafj2ksdiq0kpsbl9k3eaf"
+        }
+      ],
+      "expo-apple-authentication",
+      [
+        "expo-contacts",
+        { "contactsPermission": "Allow LendTrack to access your contacts to auto-fill borrower details." }
       ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7bacf337-0457-4393-8f39-d88d05b3c04d"
+      }
     }
   }
 }

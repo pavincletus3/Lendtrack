@@ -1,6 +1,17 @@
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { useColorScheme, Text, Platform } from 'react-native';
+import { Stack } from 'expo-router';
+
+// Fix Tamil (Indic) text + icon misalignment on Android:
+// Android adds extra vertical padding around fonts (includeFontPadding).
+// This makes tall-glyph scripts like Tamil shift out of alignment with icons.
+if (Platform.OS === 'android') {
+  const originalDefaultProps = (Text as any).defaultProps ?? {};
+  (Text as any).defaultProps = {
+    ...originalDefaultProps,
+    style: [{ includeFontPadding: false }, originalDefaultProps.style],
+  };
+}
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { Provider as PaperProvider, MD3DarkTheme, MD3LightTheme } from 'react-native-paper';
@@ -9,18 +20,16 @@ import '@/lib/i18n';
 import { useAuthStore } from '@/store/authStore';
 import { useSettingsStore } from '@/store/settingsStore';
 import { Colors } from '@/constants/Colors';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const initialize = useAuthStore((s) => s.initialize);
   const initialized = useAuthStore((s) => s.initialized);
-  const user = useAuthStore((s) => s.user);
   const loadFromStorage = useSettingsStore((s) => s.loadFromStorage);
   const themePreference = useSettingsStore((s) => s.theme);
   const systemScheme = useColorScheme();
-  const router = useRouter();
-  const segments = useSegments();
 
   useEffect(() => {
     loadFromStorage();
@@ -29,17 +38,8 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!initialized) return;
-    SplashScreen.hideAsync();
-
-    const inAuthGroup = segments[0] === '(auth)';
-
-    if (!user && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (user && inAuthGroup) {
-      router.replace('/(app)/dashboard');
-    }
-  }, [initialized, user, segments]);
+    if (initialized) SplashScreen.hideAsync();
+  }, [initialized]);
 
   const isDark =
     themePreference === 'dark' ||
@@ -65,15 +65,16 @@ export default function RootLayout() {
         },
       };
 
-  if (!initialized) return null;
-
   return (
-    <PaperProvider theme={paperTheme}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(app)" />
-      </Stack>
-    </PaperProvider>
+    <ErrorBoundary>
+      <PaperProvider theme={paperTheme}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(app)" />
+        </Stack>
+      </PaperProvider>
+    </ErrorBoundary>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
@@ -11,9 +11,17 @@ import { scheduleNotificationsForLoans, requestNotificationPermission } from '@/
 export default function AppLayout() {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const initialized = useAuthStore((s) => s.initialized);
   const { subscribe, unsubscribe, loans } = useLoansStore();
   const { overdueAlertDays, language } = useSettingsStore();
+
+  useEffect(() => {
+    if (initialized && !user) {
+      router.replace('/(auth)/login');
+    }
+  }, [user, initialized]);
 
   useEffect(() => {
     if (user) {
@@ -32,6 +40,7 @@ export default function AppLayout() {
   return (
     <Tabs
       screenOptions={{
+        sceneStyle: { backgroundColor: colors.background },
         headerStyle: { backgroundColor: colors.background },
         headerTitleStyle: { color: colors.text, fontWeight: '700' },
         headerShadowVisible: false,
@@ -39,6 +48,9 @@ export default function AppLayout() {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
           paddingBottom: 4,
+        },
+        tabBarLabelStyle: {
+          includeFontPadding: false,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.tabIconDefault,

@@ -158,7 +158,7 @@ export default function SettingsScreen() {
           ))}
         </View>
         <Text style={s.helperText}>
-          Alert fires {overdueAlertDays} {t('settings.days')} after due date if interest not received
+          {t('settings.overdueAlertHelper', { count: overdueAlertDays })}
         </Text>
       </View>
 

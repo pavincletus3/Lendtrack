@@ -22,7 +22,7 @@ import {
   toMonthKey,
   loanFirstInterestMonth,
 } from '@/lib/calculations';
-import { markInterestPaid, markInterestDeferred, updatePayment } from '@/lib/firestore/payments';
+import { markInterestPaid, markInterestDeferred, updatePayment, bulkMarkInterestPaid } from '@/lib/firestore/payments';
 import { updateLoan } from '@/lib/firestore/loans';
 import { generateMonthlySummaryPDF } from '@/lib/pdf';
 import type { BadgeStatus, Loan, Payment } from '@/types';
@@ -33,6 +33,13 @@ const BADGE_COLORS: Record<BadgeStatus, string> = {
   deferred: '#60A5FA',
   overdue: '#EF4444',
 };
+
+const LEGEND: Array<{ key: BadgeStatus; color: string }> = [
+  { key: 'paid', color: '#10B981' },
+  { key: 'pending', color: '#F59E0B' },
+  { key: 'deferred', color: '#60A5FA' },
+  { key: 'overdue', color: '#EF4444' },
+];
 
 export default function MonthlyScreen() {
   const { t } = useTranslation();
@@ -45,6 +52,7 @@ export default function MonthlyScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const monthKey = toMonthKey(currentDate);
   const activeLoans = loans.filter(
@@ -60,7 +68,9 @@ export default function MonthlyScreen() {
     .reduce((sum, p) => sum + (p.expectedAmount ?? 0), 0);
 
   function prevMonth() { setCurrentDate(subMonths(currentDate, 1)); }
-  function nextMonth() { setCurrentDate(addMonths(currentDate, 1)); }
+  function nextMonth() {
+    if (!isCurrentMonth) setCurrentDate(addMonths(currentDate, 1));
+  }
   const isCurrentMonth = monthKey === toMonthKey(new Date());
 
   async function handlePaid(loan: Loan) {
@@ -104,10 +114,52 @@ export default function MonthlyScreen() {
     }
   }
 
+  async function handleBulkMarkAllPaid() {
+    const unpaidLoans = activeLoans.filter((loan) => {
+      const existing = payments.find(
+        (p) => p.loanId === loan.id && p.month === monthKey && p.type === 'interest' && p.status === 'paid'
+      );
+      return !existing;
+    });
+
+    if (unpaidLoans.length === 0) {
+      Alert.alert('All Done', 'All loans for this month are already marked as paid.');
+      return;
+    }
+
+    Alert.alert(
+      t('payment.markAllPaid'),
+      t('payment.markAllConfirm'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.confirm'),
+          onPress: async () => {
+            setBulkLoading(true);
+            try {
+              const items = unpaidLoans.map((loan) => ({
+                loanId: loan.id,
+                userId: user!.uid,
+                month: monthKey,
+                expectedAmount: monthlyInterest(loan.currentPrincipal, loan.interestRate),
+              }));
+              await bulkMarkInterestPaid(items, payments);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            } finally {
+              setBulkLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   async function handleExport() {
     setExportLoading(true);
     try {
       await generateMonthlySummaryPDF(loans, payments, monthKey, language as 'en' | 'ta');
+      Alert.alert('Done', t('payment.exportSuccess'));
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -124,9 +176,14 @@ export default function MonthlyScreen() {
         <TouchableOpacity onPress={prevMonth} style={s.monthArrow}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <Text style={s.monthLabel}>
-          {format(currentDate, 'MMMM yyyy')}
-        </Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={s.monthLabel}>
+            {format(currentDate, 'MMMM yyyy')}
+          </Text>
+          {isCurrentMonth && (
+            <Text style={s.currentMonthNote}>{t('monthly.currentMonthNote')}</Text>
+          )}
+        </View>
         <TouchableOpacity
           onPress={nextMonth}
           style={s.monthArrow}
@@ -135,7 +192,7 @@ export default function MonthlyScreen() {
           <Ionicons
             name="chevron-forward"
             size={22}
-            color={isCurrentMonth ? colors.textMuted : colors.text}
+            color={isCurrentMonth ? colors.border : colors.text}
           />
         </TouchableOpacity>
       </View>
@@ -158,16 +215,40 @@ export default function MonthlyScreen() {
           </Text>
           <Text style={s.summaryLabel}>Remaining</Text>
         </View>
-        <TouchableOpacity
-          style={s.exportBtn}
-          onPress={handleExport}
-          disabled={exportLoading}
-        >
-          {exportLoading
-            ? <ActivityIndicator size="small" color={colors.primary} />
-            : <Ionicons name="share-outline" size={20} color={colors.primary} />
-          }
-        </TouchableOpacity>
+        <View style={s.summaryActions}>
+          {/* Bulk mark all paid */}
+          <TouchableOpacity
+            style={s.summaryActionBtn}
+            onPress={handleBulkMarkAllPaid}
+            disabled={bulkLoading || !!actionLoading}
+          >
+            {bulkLoading
+              ? <ActivityIndicator size="small" color={colors.success} />
+              : <Ionicons name="checkmark-done-outline" size={20} color={colors.success} />
+            }
+          </TouchableOpacity>
+          {/* Export PDF */}
+          <TouchableOpacity
+            style={s.summaryActionBtn}
+            onPress={handleExport}
+            disabled={exportLoading}
+          >
+            {exportLoading
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <Ionicons name="share-outline" size={20} color={colors.primary} />
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Status Legend */}
+      <View style={s.legendRow}>
+        {LEGEND.map(({ key, color }) => (
+          <View key={key} style={s.legendItem}>
+            <View style={[s.legendDot, { backgroundColor: color }]} />
+            <Text style={s.legendText}>{t(`payment.${key}`)}</Text>
+          </View>
+        ))}
       </View>
 
       <ScrollView contentContainerStyle={s.list}>
@@ -203,17 +284,17 @@ export default function MonthlyScreen() {
                       {formatCurrency(monthly)}
                     </Text>
                     <View style={[s.statusDot, { backgroundColor: BADGE_COLORS[status] }]}>
-                      <Text style={s.statusText}>{status.toUpperCase()}</Text>
+                      <Text style={s.statusText}>{t(`payment.${status}`).toUpperCase()}</Text>
                     </View>
                   </View>
                 </View>
 
                 <View style={s.cardActions}>
-                  {!isPaid && (
+                  {!isPaid && !isDeferred && (
                     <TouchableOpacity
                       style={[s.actionBtn, { backgroundColor: colors.success }]}
                       onPress={() => handlePaid(loan)}
-                      disabled={!!actionLoading}
+                      disabled={!!actionLoading || bulkLoading}
                     >
                       {isLoadingPaid
                         ? <ActivityIndicator size="small" color="#fff" />
@@ -230,7 +311,7 @@ export default function MonthlyScreen() {
                     <TouchableOpacity
                       style={[s.actionBtn, { backgroundColor: colors.info + '22', borderWidth: 1, borderColor: colors.info }]}
                       onPress={() => handleDefer(loan)}
-                      disabled={!!actionLoading}
+                      disabled={!!actionLoading || bulkLoading}
                     >
                       {isLoadingDefer
                         ? <ActivityIndicator size="small" color={colors.info} />
@@ -242,7 +323,7 @@ export default function MonthlyScreen() {
                     <TouchableOpacity
                       style={[s.actionBtn, { backgroundColor: colors.success }]}
                       onPress={() => handlePaid(loan)}
-                      disabled={!!actionLoading}
+                      disabled={!!actionLoading || bulkLoading}
                     >
                       {isLoadingPaid
                         ? <ActivityIndicator size="small" color="#fff" />
@@ -273,6 +354,7 @@ const styles = (colors: any) =>
     },
     monthArrow: { padding: 8 },
     monthLabel: { fontSize: 18, fontWeight: '700', color: colors.text },
+    currentMonthNote: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
     summaryBar: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -280,15 +362,32 @@ const styles = (colors: any) =>
       marginHorizontal: 16,
       marginTop: 12,
       borderRadius: 14,
-      padding: 16,
+      padding: 12,
       borderWidth: 1,
       borderColor: colors.border,
     },
     summaryItem: { flex: 1, alignItems: 'center' },
-    summaryValue: { fontSize: 16, fontWeight: '800', color: colors.text },
-    summaryLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+    summaryValue: { fontSize: 15, fontWeight: '800', color: colors.text },
+    summaryLabel: { fontSize: 10, color: colors.textMuted, marginTop: 2 },
     summaryDivider: { width: 1, height: 36, marginHorizontal: 4 },
-    exportBtn: { paddingLeft: 8 },
+    summaryActions: { flexDirection: 'row', gap: 4, marginLeft: 8 },
+    summaryActionBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    legendRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    legendDot: { width: 10, height: 10, borderRadius: 5 },
+    legendText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
     list: { padding: 16, gap: 12, paddingBottom: 32 },
     empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
     emptyIcon: { fontSize: 40 },

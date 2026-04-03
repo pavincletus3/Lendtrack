@@ -6,7 +6,10 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
+  Linking,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +34,7 @@ const BADGE_CONFIG: Record<BadgeStatus, { bg: string }> = {
 export default function BorrowersScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const { top } = useSafeAreaInsets();
   const router = useRouter();
   const { loans, payments } = useLoansStore();
   const overdueAlertDays = useSettingsStore((s) => s.overdueAlertDays);
@@ -46,6 +50,19 @@ export default function BorrowersScreen() {
   });
 
   const s = styles(colors);
+
+  function handleCall(phone: string) {
+    Linking.openURL(`tel:${phone}`).catch(() =>
+      Alert.alert('Error', 'Could not open phone dialer')
+    );
+  }
+
+  function handleWhatsApp(phone: string) {
+    const digits = phone.replace(/\D/g, '');
+    Linking.openURL(`whatsapp://send?phone=${digits}`).catch(() =>
+      Alert.alert('WhatsApp not installed', 'Please install WhatsApp to use this feature')
+    );
+  }
 
   function renderLoan({ item: loan }: { item: Loan }) {
     const loanPayments = payments.filter((p) => p.loanId === loan.id);
@@ -68,6 +85,27 @@ export default function BorrowersScreen() {
           <Text style={s.details}>
             {formatCurrency(loan.currentPrincipal)} · {loan.interestRate}% {t('common.perMonth')}
           </Text>
+          {/* Quick contact buttons */}
+          {loan.borrowerPhone && loan.status === 'active' && (
+            <View style={s.contactRow}>
+              <TouchableOpacity
+                style={s.contactBtn}
+                onPress={(e) => { e.stopPropagation?.(); handleCall(loan.borrowerPhone!); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="call-outline" size={13} color={colors.success} />
+                <Text style={[s.contactText, { color: colors.success }]}>{t('borrowers.callBorrower')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.contactBtn}
+                onPress={(e) => { e.stopPropagation?.(); handleWhatsApp(loan.borrowerPhone!); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="logo-whatsapp" size={13} color="#25D366" />
+                <Text style={[s.contactText, { color: '#25D366' }]}>WA</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
         <View style={s.right}>
           <Text style={[s.monthly, { color: colors.primary }]}>{formatCurrency(monthly)}</Text>
@@ -89,7 +127,7 @@ export default function BorrowersScreen() {
   return (
     <View style={s.container}>
       {/* Search */}
-      <View style={s.searchRow}>
+      <View style={[s.searchRow, { paddingTop: top + 10 }]}>
         <View style={s.searchBox}>
           <Ionicons name="search-outline" size={18} color={colors.textMuted} />
           <TextInput
@@ -213,6 +251,9 @@ const styles = (colors: any) =>
     meta: { flex: 1 },
     name: { fontSize: 15, fontWeight: '700', color: colors.text },
     details: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+    contactRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
+    contactBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    contactText: { fontSize: 11, fontWeight: '700' },
     right: { alignItems: 'flex-end', gap: 4 },
     monthly: { fontSize: 16, fontWeight: '800' },
     badge: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },

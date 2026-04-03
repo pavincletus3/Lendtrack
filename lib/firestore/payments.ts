@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
   getDocs,
   onSnapshot,
   query,
@@ -113,6 +114,30 @@ export async function recordPrincipalRepayment(
   return ref.id;
 }
 
+/** Mark multiple loans' interest as paid for a given month (skips already-paid loans) */
+export async function bulkMarkInterestPaid(
+  items: Array<{ loanId: string; userId: string; month: string; expectedAmount: number }>,
+  existingPayments: Payment[]
+): Promise<void> {
+  const tasks = items
+    .filter((item) => {
+      const already = existingPayments.find(
+        (p) => p.loanId === item.loanId && p.month === item.month && p.type === 'interest' && p.status === 'paid'
+      );
+      return !already;
+    })
+    .map((item) => {
+      const existing = existingPayments.find(
+        (p) => p.loanId === item.loanId && p.month === item.month && p.type === 'interest'
+      );
+      if (existing) {
+        return updatePayment(existing.id, { status: 'paid' });
+      }
+      return markInterestPaid(item.loanId, item.userId, item.month, item.expectedAmount);
+    });
+  await Promise.all(tasks);
+}
+
 export async function getPaymentsForUser(userId: string): Promise<Payment[]> {
   const q = query(collection(db, COLLECTION), where('userId', '==', userId));
   const snap = await getDocs(q);
@@ -133,4 +158,15 @@ export function subscribePayments(
   return onSnapshot(q, (snap) => {
     onUpdate(snap.docs.map((d) => fromFirestore(d.id, d.data())));
   });
+}
+
+/** Delete all payments belonging to a loan (call before deleting the loan) */
+export async function deletePaymentsForLoan(loanId: string, userId: string): Promise<void> {
+  const q = query(
+    collection(db, COLLECTION),
+    where('loanId', '==', loanId),
+    where('userId', '==', userId)
+  );
+  const snap = await getDocs(q);
+  await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
 }

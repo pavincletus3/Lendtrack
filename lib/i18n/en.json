@@ -18,7 +18,14 @@
     "signIn": "Sign In",
     "logout": "Logout",
     "logoutConfirm": "Are you sure you want to logout?",
-    "forgotPassword": "Forgot Password?"
+    "forgotPassword": "Forgot Password?",
+    "resetPasswordTitle": "Reset Password",
+    "resetPasswordDesc": "Enter your email and we'll send a reset link.",
+    "sendResetLink": "Send Reset Link",
+    "resetEmailSent": "Reset email sent! Check your inbox.",
+    "signInWithGoogle": "Continue with Google",
+    "signInWithApple": "Continue with Apple",
+    "orContinueWith": "or continue with"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -34,7 +41,8 @@
     "activeBorrowers": "Active Borrowers",
     "noBorrowers": "No borrowers yet",
     "addFirstLoan": "Add your first loan to get started",
-    "addLoan": "Add Loan"
+    "addLoan": "Add Loan",
+    "overdueAlert": "loan(s) have overdue interest"
   },
   "borrowers": {
     "title": "Borrowers",
@@ -63,13 +71,20 @@
     "originalPrincipal": "Original Principal",
     "repayPrincipal": "Record Principal Repayment",
     "exportPDF": "Export PDF Statement",
-    "loanDetails": "Loan Details"
+    "loanDetails": "Loan Details",
+    "editLoan": "Edit Loan",
+    "reopen": "Reopen Loan",
+    "reopenConfirm": "Reopen this loan as active?",
+    "callBorrower": "Call",
+    "whatsapp": "WhatsApp",
+    "contact": "Contact"
   },
   "monthly": {
     "title": "Monthly",
     "overview": "Monthly Overview",
     "allBorrowers": "All Borrowers",
-    "noLoans": "No active loans this month"
+    "noLoans": "No active loans this month",
+    "currentMonthNote": "You're viewing the current month"
   },
   "payment": {
     "markPaid": "Mark Paid",
@@ -82,7 +97,13 @@
     "deferredAmount": "Deferred amount",
     "expectedInterest": "Expected Interest",
     "compoundNote": "Deferred interest will be added to principal next month",
-    "simpleNote": "Deferred interest will accumulate as pending"
+    "simpleNote": "Deferred interest will accumulate as pending",
+    "principalRepaid": "Principal Repaid",
+    "principalHistory": "Principal Repayments",
+    "markAllPaid": "Mark All Paid",
+    "markAllConfirm": "Mark all pending loans as paid for this month?",
+    "legend": "Legend",
+    "exportSuccess": "PDF shared successfully"
   },
   "repayment": {
     "title": "Principal Repayment",
@@ -107,6 +128,7 @@
     "notifications": "Notifications",
     "overdueAlertDays": "Overdue Alert After",
     "days": "days",
+    "overdueAlertHelper": "Alert fires {{count}} days after due date if interest not received",
     "account": "Account",
     "displayName": "Display Name",
     "email": "Email",

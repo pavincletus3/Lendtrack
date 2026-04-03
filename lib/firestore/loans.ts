@@ -13,6 +13,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { deletePaymentsForLoan } from '@/lib/firestore/payments';
 import type { Loan } from '@/types';
 
 const COLLECTION = 'loans';
@@ -80,12 +81,13 @@ export async function updateLoan(loanId: string, updates: Partial<Loan>): Promis
   const ref = doc(db, COLLECTION, loanId);
   const data: Record<string, any> = {};
   if (updates.borrowerName !== undefined) data.borrowerName = updates.borrowerName;
+  if (updates.borrowerPhone !== undefined) data.borrowerPhone = updates.borrowerPhone ?? null;
   if (updates.currentPrincipal !== undefined) data.currentPrincipal = updates.currentPrincipal;
   if (updates.interestRate !== undefined) data.interestRate = updates.interestRate;
   if (updates.compoundEnabled !== undefined) data.compoundEnabled = updates.compoundEnabled;
   if (updates.status !== undefined) data.status = updates.status;
-  if (updates.tenure !== undefined) data.tenure = updates.tenure;
-  if (updates.notes !== undefined) data.notes = updates.notes;
+  if (updates.tenure !== undefined) data.tenure = updates.tenure ?? null;
+  if (updates.notes !== undefined) data.notes = updates.notes ?? null;
   if (updates.startDate) data.startDate = Timestamp.fromDate(new Date(updates.startDate));
   if (updates.closedAt) data.closedAt = Timestamp.fromDate(new Date(updates.closedAt));
   await updateDoc(ref, data);
@@ -98,7 +100,15 @@ export async function closeLoan(loanId: string): Promise<void> {
   });
 }
 
-export async function deleteLoan(loanId: string): Promise<void> {
+export async function reopenLoan(loanId: string): Promise<void> {
+  await updateDoc(doc(db, COLLECTION, loanId), {
+    status: 'active',
+    closedAt: null,
+  });
+}
+
+export async function deleteLoan(loanId: string, userId: string): Promise<void> {
+  await deletePaymentsForLoan(loanId, userId);
   await deleteDoc(doc(db, COLLECTION, loanId));
 }
 

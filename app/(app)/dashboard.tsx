@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +29,7 @@ export default function DashboardScreen() {
   const profile = useAuthStore((s) => s.profile);
   const { loans, payments, stats, loading } = useLoansStore();
   const overdueAlertDays = useSettingsStore((s) => s.overdueAlertDays);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const activeLoans = loans.filter((l) => l.status === 'active');
   const monthKey = currentMonthKey();
@@ -35,12 +37,34 @@ export default function DashboardScreen() {
 
   const remaining = Math.max(0, stats.expectedThisMonth - stats.collectedThisMonth);
 
+  const overdueLoans = activeLoans.filter((loan) => {
+    const loanPayments = payments.filter((p) => p.loanId === loan.id);
+    return getLoanMonthStatus(loan, monthKey, loanPayments, overdueAlertDays) === 'overdue';
+  });
+
   return (
     <ScrollView
       style={s.container}
       contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={loading} colors={[colors.primary]} />}
     >
+      {/* Overdue Banner */}
+      {overdueLoans.length > 0 && !bannerDismissed && (
+        <TouchableOpacity
+          style={s.overdueBanner}
+          activeOpacity={0.85}
+          onPress={() => router.push('/(app)/monthly')}
+        >
+          <Ionicons name="warning-outline" size={18} color="#fff" />
+          <Text style={s.overdueBannerText}>
+            ⚠️ {overdueLoans.length} {t('dashboard.overdueAlert')}
+          </Text>
+          <TouchableOpacity onPress={() => setBannerDismissed(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={18} color="#fff" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
+
       {/* Greeting */}
       <View style={s.greeting}>
         <Text style={s.greetName}>
@@ -201,6 +225,20 @@ const styles = (colors: any, isDark: boolean) =>
   StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     content: { padding: 16, paddingBottom: 32, gap: 16 },
+    overdueBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      backgroundColor: '#EF4444',
+      borderRadius: 14,
+      padding: 14,
+    },
+    overdueBannerText: {
+      flex: 1,
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 14,
+    },
     greeting: { marginBottom: 4 },
     greetName: { fontSize: 22, fontWeight: '800', color: colors.text },
     greetMonth: { fontSize: 14, color: colors.textMuted },

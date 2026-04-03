@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeAuth, getAuth, getReactNativePersistence } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TODO: Replace these placeholder values with your actual Firebase project config.
@@ -19,8 +20,12 @@ const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const auth = getApps().length === 1
+  ? initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) })
+  : getAuth(app);
+export const db = initializeFirestore(app, {
+  localCache: memoryLocalCache(),
+});
 
 export default app;
 

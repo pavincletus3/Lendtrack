@@ -3,7 +3,7 @@ import type { Loan, Payment, DashboardStats, BadgeStatus } from '@/types';
 
 /** Monthly interest amount for a given principal and rate */
 export function monthlyInterest(principal: number, ratePercent: number): number {
-  return Math.round(principal * (ratePercent / 100));
+  return Math.round((principal * ratePercent) / 100);
 }
 
 /** Format a JS Date as 'YYYY-MM' string */

@@ -25,7 +25,7 @@ export async function generateBorrowerPDF(
   loan: Loan,
   payments: Payment[],
   lang: 'en' | 'ta' = 'en'
-): Promise<void> {
+): Promise<{ shared: boolean }> {
   const interestPayments = payments
     .filter((p) => p.loanId === loan.id && p.type === 'interest')
     .sort((a, b) => a.month.localeCompare(b.month));
@@ -112,6 +112,7 @@ export async function generateBorrowerPDF(
     mimeType: 'application/pdf',
     dialogTitle: `${loan.borrowerName} - Loan Statement`,
   });
+  return { shared: true };
 }
 
 export async function generateMonthlySummaryPDF(
@@ -119,7 +120,7 @@ export async function generateMonthlySummaryPDF(
   payments: Payment[],
   monthKey: string,
   lang: 'en' | 'ta' = 'en'
-): Promise<void> {
+): Promise<{ shared: boolean }> {
   const activeLoans = loans.filter((l) => l.status === 'active');
 
   let totalExpected = 0;
@@ -184,6 +185,7 @@ export async function generateMonthlySummaryPDF(
   const { uri } = await Print.printToFileAsync({ html });
   await Sharing.shareAsync(uri, {
     mimeType: 'application/pdf',
-    dialogTitle: `Monthly Summary - ${monthKey}`,
+    dialogTitle: `LendTrack - ${monthKey} Summary`,
   });
+  return { shared: true };
 }

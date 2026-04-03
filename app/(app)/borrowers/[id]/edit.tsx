@@ -9,48 +9,54 @@ import {
   Alert,
   Switch,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useAuthStore } from '@/store/authStore';
+import { useLoansStore } from '@/store/loansStore';
 import { useTheme } from '@/hooks/useTheme';
 import { ContactPickerModal } from '@/components/ContactPickerModal';
-import { createLoan } from '@/lib/firestore/loans';
+import { updateLoan } from '@/lib/firestore/loans';
 import { monthlyInterest, formatCurrency } from '@/lib/calculations';
 
-export default function AddLoanScreen() {
+export default function EditLoanScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { t } = useTranslation();
   const { colors } = useTheme();
   const router = useRouter();
-  const user = useAuthStore((s) => s.user);
+  const loans = useLoansStore((s) => s.loans);
+  const loan = loans.find((l) => l.id === id);
 
-  const [borrowerName, setBorrowerName] = useState('');
-  const [borrowerPhone, setBorrowerPhone] = useState('');
-  const [principal, setPrincipal] = useState('');
-  const [interestRate, setInterestRate] = useState('2');
-  const [cycleType, setCycleType] = useState<'calendar' | 'anniversary'>('calendar');
-  const [startDate, setStartDate] = useState(new Date());
+  // Prefill state from loan
+  const [borrowerName, setBorrowerName] = useState(loan?.borrowerName ?? '');
+  const [borrowerPhone, setBorrowerPhone] = useState(loan?.borrowerPhone ?? '');
+  const [interestRate, setInterestRate] = useState(String(loan?.interestRate ?? '2'));
+  const [cycleType, setCycleType] = useState<'calendar' | 'anniversary'>(loan?.cycleType ?? 'calendar');
+  const [startDate, setStartDate] = useState(loan ? new Date(loan.startDate) : new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [hasTenure, setHasTenure] = useState(false);
-  const [tenure, setTenure] = useState('12');
-  const [compoundEnabled, setCompoundEnabled] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [hasTenure, setHasTenure] = useState(!!loan?.tenure);
+  const [tenure, setTenure] = useState(String(loan?.tenure ?? '12'));
+  const [compoundEnabled, setCompoundEnabled] = useState(loan?.compoundEnabled ?? false);
+  const [notes, setNotes] = useState(loan?.notes ?? '');
   const [saving, setSaving] = useState(false);
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
 
-  const principalNum = parseFloat(principal) || 0;
+  if (!loan) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
   const rateNum = parseFloat(interestRate) || 0;
-  const monthly = monthlyInterest(principalNum, rateNum);
+  const monthly = monthlyInterest(loan.currentPrincipal, rateNum);
 
   async function handleSave() {
     if (!borrowerName.trim()) {
       Alert.alert('Error', 'Borrower name is required');
-      return;
-    }
-    if (principalNum <= 0) {
-      Alert.alert('Error', 'Enter a valid principal amount');
       return;
     }
     if (rateNum <= 0) {
@@ -60,23 +66,19 @@ export default function AddLoanScreen() {
 
     setSaving(true);
     try {
-      await createLoan({
-        userId: user!.uid,
+      await updateLoan(loan.id, {
         borrowerName: borrowerName.trim(),
         borrowerPhone: borrowerPhone.trim() || undefined,
-        originalPrincipal: principalNum,
-        currentPrincipal: principalNum,
         interestRate: rateNum,
-        startDate,
         cycleType,
-        tenure: hasTenure ? parseInt(tenure) : undefined,
+        startDate,
+        tenure: hasTenure ? parseInt(tenure) || undefined : undefined,
         compoundEnabled,
-        status: 'active',
         notes: notes.trim() || undefined,
       });
       router.back();
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Failed to save loan');
+      Alert.alert('Error', e.message ?? 'Failed to update loan');
     } finally {
       setSaving(false);
     }
@@ -89,8 +91,7 @@ export default function AddLoanScreen() {
       <ContactPickerModal
         visible={contactPickerVisible}
         onClose={() => setContactPickerVisible(false)}
-        onSelect={(name, phone) => {
-          setBorrowerName(name);
+        onSelect={(_name, phone) => {
           setBorrowerPhone(phone);
         }}
       />
@@ -99,42 +100,22 @@ export default function AddLoanScreen() {
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>{t('borrowers.addLoan')}</Text>
+        <Text style={s.headerTitle}>{t('borrowers.editLoan')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={s.form} keyboardShouldPersistTaps="handled">
+        {/* Read-only principal info */}
+        <View style={s.infoCard}>
+          <Text style={s.infoLabel}>{t('borrowers.originalPrincipal')}</Text>
+          <Text style={[s.infoValue, { color: colors.primary }]}>{formatCurrency(loan.originalPrincipal)}</Text>
+          <Text style={s.infoSub}>{t('borrowers.currentPrincipal')}: {formatCurrency(loan.currentPrincipal)}</Text>
+          <Text style={[s.infoSub, { color: colors.textMuted, fontSize: 11, marginTop: 2 }]}>
+            Principal cannot be edited here. Use Repay Principal to change it.
+          </Text>
+        </View>
+
         <SectionLabel text="Borrower Details" colors={colors} />
-
-        <InputField label={t('borrowers.principal') + ' (₹)'} colors={colors}>
-          <TextInput
-            style={s.input}
-            value={principal}
-            onChangeText={setPrincipal}
-            keyboardType="numeric"
-            placeholder="100000"
-            placeholderTextColor={colors.textMuted}
-          />
-        </InputField>
-
-        {principalNum > 0 && rateNum > 0 && (
-          <View style={s.previewBox}>
-            <Text style={[s.previewLabel, { color: colors.textMuted }]}>Monthly interest</Text>
-            <Text style={[s.previewValue, { color: colors.primary }]}>{formatCurrency(monthly)}</Text>
-            <Text style={[s.previewSub, { color: colors.textMuted }]}>{rateNum * 12}% per annum</Text>
-          </View>
-        )}
-
-        <InputField label={`${t('borrowers.interestRate')} (% ${t('common.perMonth')})`} colors={colors}>
-          <TextInput
-            style={s.input}
-            value={interestRate}
-            onChangeText={setInterestRate}
-            keyboardType="numeric"
-            placeholder="2"
-            placeholderTextColor={colors.textMuted}
-          />
-        </InputField>
 
         <InputField label={t('borrowers.principal').replace('Amount', 'Name') || 'Borrower Name'} colors={colors}>
           <TextInput
@@ -166,6 +147,25 @@ export default function AddLoanScreen() {
           </View>
         </InputField>
 
+        <InputField label={`${t('borrowers.interestRate')} (% ${t('common.perMonth')})`} colors={colors}>
+          <TextInput
+            style={s.input}
+            value={interestRate}
+            onChangeText={setInterestRate}
+            keyboardType="numeric"
+            placeholder="2"
+            placeholderTextColor={colors.textMuted}
+          />
+        </InputField>
+
+        {rateNum > 0 && (
+          <View style={s.previewBox}>
+            <Text style={[s.previewLabel, { color: colors.textMuted }]}>Monthly interest at current principal</Text>
+            <Text style={[s.previewValue, { color: colors.primary }]}>{formatCurrency(monthly)}</Text>
+            <Text style={[s.previewSub, { color: colors.textMuted }]}>{rateNum * 12}% per annum</Text>
+          </View>
+        )}
+
         <SectionLabel text="Loan Configuration" colors={colors} />
 
         {/* Start Date */}
@@ -175,11 +175,7 @@ export default function AddLoanScreen() {
             onPress={() => setShowDatePicker(true)}
           >
             <Text style={{ color: colors.text }}>
-              {startDate.toLocaleDateString('en-IN', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
+              {startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
             </Text>
             <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
           </TouchableOpacity>
@@ -203,18 +199,10 @@ export default function AddLoanScreen() {
             {(['calendar', 'anniversary'] as const).map((ct) => (
               <TouchableOpacity
                 key={ct}
-                style={[
-                  s.segment,
-                  cycleType === ct && { backgroundColor: colors.primary },
-                ]}
+                style={[s.segment, cycleType === ct && { backgroundColor: colors.primary }]}
                 onPress={() => setCycleType(ct)}
               >
-                <Text
-                  style={[
-                    s.segmentText,
-                    { color: cycleType === ct ? '#fff' : colors.textMuted },
-                  ]}
-                >
+                <Text style={[s.segmentText, { color: cycleType === ct ? '#fff' : colors.textMuted }]}>
                   {t(`borrowers.${ct}`)}
                 </Text>
               </TouchableOpacity>
@@ -224,7 +212,7 @@ export default function AddLoanScreen() {
 
         {/* Compound Toggle */}
         <View style={s.toggleRow}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={s.toggleLabel}>{t('borrowers.compound')}</Text>
             <Text style={s.toggleSub}>
               {compoundEnabled ? t('payment.compoundNote') : t('payment.simpleNote')}
@@ -281,7 +269,7 @@ export default function AddLoanScreen() {
         >
           <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
           <Text style={s.saveBtnText}>
-            {saving ? t('common.loading') : t('borrowers.save')}
+            {saving ? t('common.loading') : t('common.save')}
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -323,6 +311,15 @@ const styles = (colors: any) =>
     backBtn: { width: 40, alignItems: 'flex-start' },
     headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
     form: { padding: 20, paddingBottom: 40, gap: 8 },
+    infoCard: {
+      backgroundColor: colors.primary + '15',
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 4,
+    },
+    infoLabel: { fontSize: 11, color: colors.primary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+    infoValue: { fontSize: 22, fontWeight: '800', marginTop: 2 },
+    infoSub: { fontSize: 12, color: colors.text, marginTop: 4 },
     input: {
       backgroundColor: colors.card,
       borderWidth: 1,
@@ -355,11 +352,7 @@ const styles = (colors: any) =>
       borderColor: colors.border,
       overflow: 'hidden',
     },
-    segment: {
-      flex: 1,
-      paddingVertical: 12,
-      alignItems: 'center',
-    },
+    segment: { flex: 1, paddingVertical: 12, alignItems: 'center' },
     segmentText: { fontSize: 13, fontWeight: '600' },
     toggleRow: {
       flexDirection: 'row',
