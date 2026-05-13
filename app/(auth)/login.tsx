@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@/hooks/useTheme';
 import { Type, Spacing, Radius } from '@/constants/Typography';
@@ -20,11 +19,11 @@ import { Field, Input, PrimaryButton } from '@/components/ui';
 
 export default function LoginScreen() {
   const { t } = useTranslation();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const { login, resetPassword, loginWithGoogle, loginWithApple, loading } = useAuthStore();
+  const { login, resetPassword, loginWithGoogle, loading } = useAuthStore();
   const [resetModalVisible, setResetModalVisible] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
@@ -41,13 +40,6 @@ export default function LoginScreen() {
   async function handleGoogle() {
     try { await loginWithGoogle(); }
     catch (e: any) { Alert.alert('Google Sign-In Failed', e.message ?? 'Please try again'); }
-  }
-
-  async function handleApple() {
-    try { await loginWithApple(); }
-    catch (e: any) {
-      if (e.code !== 'ERR_CANCELED') Alert.alert('Apple Sign-In Failed', e.message ?? 'Please try again');
-    }
   }
 
   async function handleResetPassword() {
@@ -134,20 +126,6 @@ export default function LoginScreen() {
             <Text style={{ fontSize: 16, fontWeight: '900', color: '#EA4335' }}>G</Text>
             <Text style={[Type.bodyBold, { color: colors.text }]}>{t('auth.signInWithGoogle')}</Text>
           </TouchableOpacity>
-
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity
-              style={[styles.socialBtn, { backgroundColor: isDark ? '#fff' : '#000', marginTop: Spacing.sm }]}
-              onPress={handleApple}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="logo-apple" size={18} color={isDark ? '#000' : '#fff'} />
-              <Text style={[Type.bodyBold, { color: isDark ? '#000' : '#fff' }]}>
-                {t('auth.signInWithApple')}
-              </Text>
-            </TouchableOpacity>
-          )}
 
           <View style={styles.footer}>
             <Text style={[Type.body, { color: colors.textMuted }]}>{t('auth.noAccount')} </Text>

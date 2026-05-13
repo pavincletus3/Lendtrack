@@ -6,12 +6,9 @@ import {
   onAuthStateChanged,
   sendPasswordResetEmail,
   GoogleAuthProvider,
-  OAuthProvider,
   signInWithCredential,
   type User,
 } from 'firebase/auth';
-import { Platform } from 'react-native';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { auth } from '@/lib/firebase';
 import { createUserProfile, getUserProfile } from '@/lib/firestore/users';
 import type { UserProfile } from '@/types';
@@ -41,7 +38,6 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
-  loginWithApple: () => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   setProfile: (profile: UserProfile | null) => void;
@@ -101,32 +97,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const credential = GoogleAuthProvider.credential(idToken);
       const result = await signInWithCredential(auth, credential);
       await ensureProfile(result.user);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  loginWithApple: async () => {
-    if (Platform.OS !== 'ios') return;
-    set({ loading: true });
-    try {
-      const appleCredential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      const { identityToken } = appleCredential;
-      if (!identityToken) throw new Error('Apple Sign-In failed: no identity token');
-      const provider = new OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: identityToken });
-      const result = await signInWithCredential(auth, credential);
-      if (appleCredential.fullName?.givenName) {
-        const displayName = `${appleCredential.fullName.givenName} ${appleCredential.fullName.familyName ?? ''}`.trim();
-        await createUserProfile(result.user.uid, result.user.email ?? '', displayName);
-      } else {
-        await ensureProfile(result.user);
-      }
     } finally {
       set({ loading: false });
     }

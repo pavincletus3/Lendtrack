@@ -25,7 +25,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -50,10 +54,20 @@
           "iosUrlScheme": "com.googleusercontent.apps.355259328072-mhcd6lbgb3mafj2ksdiq0kpsbl9k3eaf"
         }
       ],
-      "expo-apple-authentication",
       [
         "expo-contacts",
-        { "contactsPermission": "Allow LendTrack to access your contacts to auto-fill borrower details." }
+        {
+          "contactsPermission": "Allow LendTrack to access your contacts to auto-fill borrower details."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
       ]
     ],
     "experiments": {
@@ -64,6 +78,7 @@
       "eas": {
         "projectId": "7bacf337-0457-4393-8f39-d88d05b3c04d"
       }
-    }
+    },
+    "owner": "pavin_cletus"
   }
 }
