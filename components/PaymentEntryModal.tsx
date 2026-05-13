@@ -16,6 +16,8 @@ import { useTranslation } from 'react-i18next';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/useTheme';
 import { formatCurrency } from '@/lib/calculations';
+import { Type, Spacing, Radius } from '@/constants/Typography';
+import { PrimaryButton } from '@/components/ui';
 
 export interface PaymentEntryModalProps {
   visible: boolean;
@@ -96,41 +98,25 @@ export function PaymentEntryModal({
 
   async function handleDelete() {
     if (!onDelete) return;
-    Alert.alert(
-      t('payment.markUnpaid'),
-      t('payment.markUnpaidConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await onDelete();
-              onClose();
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            } finally {
-              setBusy(false);
-            }
-          },
-        },
-      ]
-    );
+    setBusy(true);
+    try {
+      await onDelete();
+      onClose();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={s.backdrop}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
         <TouchableOpacity style={s.backdropTouch} activeOpacity={1} onPress={onClose} />
         <View style={s.sheet}>
           <View style={s.handle} />
           <View style={s.headerRow}>
-            <Text style={s.title}>
+            <Text style={[Type.titleLg, { color: colors.text }]}>
               {mode === 'edit' ? t('payment.editPayment') : t('payment.recordPayment')}
             </Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -138,8 +124,8 @@ export function PaymentEntryModal({
             </TouchableOpacity>
           </View>
 
-          <Text style={s.monthLabel}>{monthLabel}</Text>
-          <Text style={s.expected}>
+          <Text style={[Type.caption, { color: colors.textMuted, marginTop: 4 }]}>{monthLabel}</Text>
+          <Text style={[Type.captionBold, { color: colors.primary, marginTop: 2 }]}>
             {t('payment.expectedInterest')}: {formatCurrency(expectedAmount)}
           </Text>
 
@@ -153,16 +139,14 @@ export function PaymentEntryModal({
             placeholderTextColor={colors.textMuted}
           />
           {isPartial && (
-            <Text style={[s.hint, { color: colors.warning }]}>
+            <Text style={[Type.micro, { color: colors.warning, marginTop: 4 }]}>
               {t('payment.partialHint', { remaining: formatCurrency(expectedAmount - amountNum) })}
             </Text>
           )}
 
           <Text style={s.label}>{t('payment.dateOfPayment')}</Text>
           <TouchableOpacity style={[s.input, s.dateBtn]} onPress={() => setShowDate(true)}>
-            <Text style={{ color: colors.text }}>
-              {format(paidAt, 'dd MMM yyyy')}
-            </Text>
+            <Text style={[Type.body, { color: colors.text }]}>{format(paidAt, 'dd MMM yyyy')}</Text>
             <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
           </TouchableOpacity>
 
@@ -181,7 +165,7 @@ export function PaymentEntryModal({
 
           <Text style={s.label}>{t('repayment.notes')}</Text>
           <TextInput
-            style={[s.input, { minHeight: 60, textAlignVertical: 'top' }]}
+            style={[s.input, { minHeight: 56 }]}
             value={notes}
             onChangeText={setNotes}
             multiline
@@ -191,23 +175,25 @@ export function PaymentEntryModal({
 
           <View style={s.actions}>
             {mode === 'edit' && onDelete && (
-              <TouchableOpacity
-                style={[s.btn, { backgroundColor: colors.danger + '22', borderWidth: 1, borderColor: colors.danger }]}
-                onPress={handleDelete}
-                disabled={busy}
-              >
-                <Ionicons name="trash-outline" size={16} color={colors.danger} />
-                <Text style={[s.btnText, { color: colors.danger }]}>{t('payment.markUnpaid')}</Text>
-              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <PrimaryButton
+                  label={t('payment.markUnpaid')}
+                  icon="trash-outline"
+                  onPress={handleDelete}
+                  variant="danger"
+                  fullWidth
+                />
+              </View>
             )}
-            <TouchableOpacity
-              style={[s.btn, { backgroundColor: colors.primary, flex: 1 }, busy && { opacity: 0.6 }]}
-              onPress={handleSave}
-              disabled={busy}
-            >
-              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-              <Text style={[s.btnText, { color: '#fff' }]}>{t('common.save')}</Text>
-            </TouchableOpacity>
+            <View style={{ flex: mode === 'edit' && onDelete ? 1 : 2 }}>
+              <PrimaryButton
+                label={t('common.save')}
+                icon="checkmark"
+                onPress={handleSave}
+                loading={busy}
+                fullWidth
+              />
+            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -217,50 +203,27 @@ export function PaymentEntryModal({
 
 const styles = (colors: any) =>
   StyleSheet.create({
-    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
     backdropTouch: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     sheet: {
       backgroundColor: colors.background,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      paddingHorizontal: 20,
-      paddingTop: 8,
-      paddingBottom: 28,
-      gap: 8,
+      borderTopLeftRadius: Radius.xxl,
+      borderTopRightRadius: Radius.xxl,
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.xxl,
     },
-    handle: {
-      alignSelf: 'center',
-      width: 40,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.border,
-      marginBottom: 8,
-    },
+    handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: Spacing.md },
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    title: { fontSize: 18, fontWeight: '800', color: colors.text },
-    monthLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
-    expected: { fontSize: 13, color: colors.primary, fontWeight: '700', marginBottom: 6 },
-    label: { fontSize: 12, fontWeight: '600', color: colors.textMuted, marginTop: 6 },
+    label: { ...Type.micro, color: colors.textMuted, marginTop: Spacing.lg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
     input: {
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 12,
-      padding: 12,
+      backgroundColor: colors.surface,
+      borderRadius: Radius.lg,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 14,
       fontSize: 15,
       color: colors.text,
     },
     dateBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    hint: { fontSize: 11, marginTop: 2 },
-    actions: { flexDirection: 'row', gap: 10, marginTop: 14 },
-    btn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 12,
-      paddingVertical: 12,
-      paddingHorizontal: 14,
-      gap: 6,
-    },
-    btnText: { fontWeight: '700', fontSize: 13 },
+    actions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xl },
   });

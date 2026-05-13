@@ -8,7 +8,7 @@ export default function AuthLayout() {
 
   useEffect(() => {
     if (user) {
-      router.replace('/(app)/dashboard');
+      router.replace('/(app)/(tabs)/dashboard');
     }
   }, [user]);
 

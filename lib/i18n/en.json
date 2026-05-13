@@ -80,7 +80,23 @@
     "filterAll": "All",
     "filterOverdue": "Overdue",
     "filterPending": "Pending",
-    "filterPaid": "Paid"
+    "filterPaid": "Paid",
+    "sortBy": "Sort by",
+    "sortOverdue": "Overdue amount",
+    "sortName": "Name",
+    "sortPrincipal": "Principal",
+    "sortStartDate": "Start date",
+    "deleteLoan": "Delete loan",
+    "deleteLoanMessage": "Permanently remove \"{{name}}\" and all of their payment history.",
+    "deletedLoan": "Deleted {{name}}",
+    "closeLoanMessage": "Mark this loan as fully repaid and move it to the closed list.",
+    "reopenLoanMessage": "Reopen this loan as active and resume monthly interest tracking.",
+    "noResults": "No results found",
+    "noResultsHint": "Try a different name or phone number.",
+    "noClosed": "No closed loans yet",
+    "noClosedHint": "Loans you close will appear here.",
+    "noInFilter": "Nothing here",
+    "noInFilterHint": "No borrowers match this filter right now."
   },
   "monthly": {
     "title": "Monthly",
@@ -125,7 +141,10 @@
     "markAllPaid": "Mark All Paid",
     "markAllConfirm": "Mark all pending loans as paid for this month (paid today, full amount)?",
     "legend": "Legend",
-    "exportSuccess": "PDF shared successfully"
+    "exportSuccess": "PDF shared successfully",
+    "markedPaid": "Marked paid",
+    "unmarked": "Payment removed",
+    "principalDeleted": "Repayment removed"
   },
   "repayment": {
     "title": "Principal Repayment",
@@ -148,6 +167,7 @@
     "dark": "Dark",
     "system": "System",
     "notifications": "Notifications",
+    "vibration": "Vibration",
     "overdueAlertDays": "Overdue Alert After",
     "days": "days",
     "overdueAlertHelper": "Alert fires {{count}} days after due date if interest not received",
@@ -172,6 +192,7 @@
     "pa": "p.a.",
     "of": "of",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "undo": "Undo"
   }
 }

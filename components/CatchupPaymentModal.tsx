@@ -22,6 +22,8 @@ import {
   distributeCatchup,
 } from '@/lib/calculations';
 import { markInterestPaid } from '@/lib/firestore/payments';
+import { Type, Spacing, Radius } from '@/constants/Typography';
+import { PrimaryButton } from '@/components/ui';
 import type { Loan, Payment } from '@/types';
 
 export interface CatchupPaymentModalProps {
@@ -94,7 +96,6 @@ export function CatchupPaymentModal({
       );
       return;
     }
-
     const summary =
       `${t('payment.catchupSummaryFull', { count: fullCount })}` +
       (partialCount > 0
@@ -103,10 +104,7 @@ export function CatchupPaymentModal({
             amount: formatCurrency(allocations[allocations.length - 1].applied),
           })}`
         : '') +
-      (stillUnpaid > 0
-        ? `\n${t('payment.catchupSummaryRemaining', { count: stillUnpaid })}`
-        : '');
-
+      (stillUnpaid > 0 ? `\n${t('payment.catchupSummaryRemaining', { count: stillUnpaid })}` : '');
     Alert.alert(t('payment.catchupConfirmTitle'), summary, [
       { text: t('common.cancel'), style: 'cancel' },
       { text: t('common.confirm'), onPress: applyAllocations },
@@ -145,39 +143,40 @@ export function CatchupPaymentModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={s.backdrop}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
         <TouchableOpacity style={s.backdropTouch} activeOpacity={1} onPress={onClose} />
         <View style={s.sheet}>
           <View style={s.handle} />
           <View style={s.headerRow}>
-            <Text style={s.title}>{t('payment.catchupPayment')}</Text>
+            <Text style={[Type.titleLg, { color: colors.text }]}>{t('payment.catchupPayment')}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="close" size={22} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
 
-          <Text style={s.sub}>{t('payment.catchupDesc')}</Text>
+          <Text style={[Type.caption, { color: colors.textMuted, marginTop: 4 }]}>
+            {t('payment.catchupDesc')}
+          </Text>
 
           {nothingOwed ? (
             <View style={s.empty}>
-              <Ionicons name="checkmark-circle" size={36} color={colors.success} />
-              <Text style={[s.emptyText, { color: colors.text }]}>
+              <Ionicons name="checkmark-circle" size={44} color={colors.success} />
+              <Text style={[Type.bodyBold, { color: colors.text, marginTop: Spacing.sm }]}>
                 {t('payment.catchupNothingOwed')}
               </Text>
             </View>
           ) : (
             <>
-              <View style={s.owedBox}>
-                <Text style={[s.owedLabel, { color: colors.textMuted }]}>
-                  {t('payment.totalOutstanding')}
-                </Text>
-                <Text style={[s.owedValue, { color: colors.warning }]}>
-                  {formatCurrency(totalOwed)}
-                </Text>
-                <Text style={[s.owedSub, { color: colors.textMuted }]}>
+              <View style={[s.owedBox, { backgroundColor: colors.warningTint }]}>
+                <View>
+                  <Text style={[Type.micro, { color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 }]}>
+                    {t('payment.totalOutstanding')}
+                  </Text>
+                  <Text style={[Type.hero, { color: colors.warning, marginTop: 2 }]}>
+                    {formatCurrency(totalOwed)}
+                  </Text>
+                </View>
+                <Text style={[Type.caption, { color: colors.warning, opacity: 0.8 }]}>
                   {t('payment.acrossMonths', { count: unpaid.length })}
                 </Text>
               </View>
@@ -194,7 +193,7 @@ export function CatchupPaymentModal({
 
               <Text style={s.label}>{t('payment.dateOfPayment')}</Text>
               <TouchableOpacity style={[s.input, s.dateBtn]} onPress={() => setShowDate(true)}>
-                <Text style={{ color: colors.text }}>{format(paidAt, 'dd MMM yyyy')}</Text>
+                <Text style={[Type.body, { color: colors.text }]}>{format(paidAt, 'dd MMM yyyy')}</Text>
                 <Ionicons name="calendar-outline" size={18} color={colors.textMuted} />
               </TouchableOpacity>
 
@@ -221,44 +220,43 @@ export function CatchupPaymentModal({
               />
 
               {amountNum > 0 && (
-                <View style={s.preview}>
-                  <Text style={[s.previewTitle, { color: colors.primary }]}>
+                <View style={[s.preview, { backgroundColor: colors.surface }]}>
+                  <Text style={[Type.micro, { color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.5 }]}>
                     {t('payment.catchupPreview')}
                   </Text>
-                  <ScrollView style={{ maxHeight: 140 }}>
+                  <ScrollView style={{ maxHeight: 160, marginTop: Spacing.sm }}>
                     {allocations.map((a) => (
                       <View key={a.month} style={s.previewRow}>
-                        <Text style={[s.previewMonth, { color: colors.text }]}>
-                          {fmtMonth(a.month)}
-                        </Text>
-                        <Text style={[s.previewAmount, { color: a.fullyPaid ? colors.success : colors.warning }]}>
+                        <Text style={[Type.body, { color: colors.text }]}>{fmtMonth(a.month)}</Text>
+                        <Text style={[Type.bodyBold, { color: a.fullyPaid ? colors.success : colors.warning }]}>
                           {formatCurrency(a.applied)}
                           {!a.fullyPaid && ` / ${formatCurrency(a.expected - a.previouslyPaid)}`}
                         </Text>
                       </View>
                     ))}
                     {stillUnpaid > 0 && (
-                      <Text style={[s.previewRemaining, { color: colors.textMuted }]}>
+                      <Text style={[Type.caption, { color: colors.textMuted, fontStyle: 'italic', marginTop: 4 }]}>
                         {t('payment.catchupSummaryRemaining', { count: stillUnpaid })}
                       </Text>
                     )}
                   </ScrollView>
                   {leftover > 0 && (
-                    <Text style={[s.previewRemaining, { color: colors.danger }]}>
+                    <Text style={[Type.caption, { color: colors.danger, marginTop: 4 }]}>
                       {t('payment.catchupLeftover', { amount: formatCurrency(leftover) })}
                     </Text>
                   )}
                 </View>
               )}
 
-              <TouchableOpacity
-                style={[s.saveBtn, { backgroundColor: colors.primary }, busy && { opacity: 0.6 }]}
-                onPress={handleSave}
-                disabled={busy}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                <Text style={s.saveBtnText}>{t('common.save')}</Text>
-              </TouchableOpacity>
+              <View style={{ marginTop: Spacing.xl }}>
+                <PrimaryButton
+                  label={t('common.save')}
+                  icon="checkmark"
+                  onPress={handleSave}
+                  loading={busy}
+                  fullWidth
+                />
+              </View>
             </>
           )}
         </View>
@@ -269,74 +267,42 @@ export function CatchupPaymentModal({
 
 const styles = (colors: any) =>
   StyleSheet.create({
-    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.45)' },
     backdropTouch: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     sheet: {
       backgroundColor: colors.background,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      paddingHorizontal: 20,
-      paddingTop: 8,
-      paddingBottom: 28,
-      gap: 6,
-      maxHeight: '90%',
+      borderTopLeftRadius: Radius.xxl,
+      borderTopRightRadius: Radius.xxl,
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.xxl,
+      maxHeight: '92%',
     },
-    handle: {
-      alignSelf: 'center',
-      width: 40,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.border,
-      marginBottom: 6,
-    },
+    handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: Spacing.md },
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    title: { fontSize: 18, fontWeight: '800', color: colors.text },
-    sub: { fontSize: 12, color: colors.textMuted, marginBottom: 4 },
-    empty: { alignItems: 'center', padding: 24, gap: 12 },
-    emptyText: { fontSize: 14, fontWeight: '600', textAlign: 'center' },
+    empty: { alignItems: 'center', padding: Spacing.xxxl, gap: Spacing.sm },
     owedBox: {
-      backgroundColor: colors.warning + '15',
-      borderRadius: 12,
-      padding: 12,
-      alignItems: 'center',
-      marginBottom: 4,
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      borderRadius: Radius.xl,
+      padding: Spacing.lg,
+      marginTop: Spacing.lg,
     },
-    owedLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-    owedValue: { fontSize: 22, fontWeight: '800', marginTop: 2 },
-    owedSub: { fontSize: 11, marginTop: 2 },
-    label: { fontSize: 12, fontWeight: '600', color: colors.textMuted, marginTop: 6 },
+    label: { ...Type.micro, color: colors.textMuted, marginTop: Spacing.lg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
     input: {
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 12,
-      padding: 12,
+      backgroundColor: colors.surface,
+      borderRadius: Radius.lg,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 14,
       fontSize: 15,
       color: colors.text,
     },
     dateBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     preview: {
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginTop: 8,
-      gap: 4,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginTop: Spacing.md,
     },
-    previewTitle: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-    previewRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-    previewMonth: { fontSize: 13 },
-    previewAmount: { fontSize: 13, fontWeight: '700' },
-    previewRemaining: { fontSize: 11, fontStyle: 'italic', marginTop: 4 },
-    saveBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 12,
-      paddingVertical: 14,
-      gap: 8,
-      marginTop: 14,
-    },
-    saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    previewRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   });
