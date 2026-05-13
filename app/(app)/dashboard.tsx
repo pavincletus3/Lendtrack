@@ -17,8 +17,8 @@ import type { BadgeStatus } from '@/types';
 
 const BADGE_CONFIG: Record<BadgeStatus, { bg: string; label: string }> = {
   paid: { bg: '#10B981', label: 'Paid' },
+  partial: { bg: '#A78BFA', label: 'Partial' },
   pending: { bg: '#F59E0B', label: 'Pending' },
-  deferred: { bg: '#60A5FA', label: 'Deferred' },
   overdue: { bg: '#EF4444', label: 'Overdue' },
 };
 
@@ -92,11 +92,11 @@ export default function DashboardScreen() {
           colors={colors}
         />
         <StatCard
-          label={t('dashboard.totalAccrued')}
-          sublabel={t('dashboard.includingDeferred')}
-          value={formatCurrency(stats.totalInterestAccrued)}
-          accent={colors.info}
-          icon="stats-chart-outline"
+          label={t('dashboard.outstandingInterest')}
+          sublabel={t('dashboard.outstandingSub')}
+          value={formatCurrency(stats.totalOutstandingInterest)}
+          accent={stats.totalOutstandingInterest > 0 ? colors.warning : colors.success}
+          icon="alert-circle-outline"
           colors={colors}
         />
         <StatCard

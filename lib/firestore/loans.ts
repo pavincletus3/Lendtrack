@@ -44,7 +44,6 @@ function fromFirestore(id: string, data: Record<string, any>): Loan {
     startDate: toDate(data.startDate),
     cycleType: data.cycleType,
     tenure: data.tenure ?? undefined,
-    compoundEnabled: data.compoundEnabled,
     status: data.status,
     closedAt: data.closedAt ? toDate(data.closedAt) : undefined,
     notes: data.notes ?? undefined,
@@ -67,7 +66,6 @@ export async function createLoan(input: CreateLoanInput): Promise<string> {
     startDate: Timestamp.fromDate(new Date(input.startDate)),
     cycleType: input.cycleType,
     tenure: input.tenure ?? null,
-    compoundEnabled: input.compoundEnabled,
     status: input.status,
     closedAt: null,
     notes: input.notes ?? null,
@@ -84,7 +82,7 @@ export async function updateLoan(loanId: string, updates: Partial<Loan>): Promis
   if (updates.borrowerPhone !== undefined) data.borrowerPhone = updates.borrowerPhone ?? null;
   if (updates.currentPrincipal !== undefined) data.currentPrincipal = updates.currentPrincipal;
   if (updates.interestRate !== undefined) data.interestRate = updates.interestRate;
-  if (updates.compoundEnabled !== undefined) data.compoundEnabled = updates.compoundEnabled;
+  if (updates.cycleType !== undefined) data.cycleType = updates.cycleType;
   if (updates.status !== undefined) data.status = updates.status;
   if (updates.tenure !== undefined) data.tenure = updates.tenure ?? null;
   if (updates.notes !== undefined) data.notes = updates.notes ?? null;

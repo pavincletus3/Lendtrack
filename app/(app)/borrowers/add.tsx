@@ -18,7 +18,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useTheme } from '@/hooks/useTheme';
 import { ContactPickerModal } from '@/components/ContactPickerModal';
 import { createLoan } from '@/lib/firestore/loans';
-import { monthlyInterest, formatCurrency } from '@/lib/calculations';
+import { createHistoricalPaidPayments } from '@/lib/firestore/payments';
+import { monthlyInterest, formatCurrency, getLoanMonths, currentMonthKey } from '@/lib/calculations';
 
 export default function AddLoanScreen() {
   const { t } = useTranslation();
@@ -35,14 +36,20 @@ export default function AddLoanScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [hasTenure, setHasTenure] = useState(false);
   const [tenure, setTenure] = useState('12');
-  const [compoundEnabled, setCompoundEnabled] = useState(false);
   const [notes, setNotes] = useState('');
+  const [backfillPaid, setBackfillPaid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
 
   const principalNum = parseFloat(principal) || 0;
   const rateNum = parseFloat(interestRate) || 0;
   const monthly = monthlyInterest(principalNum, rateNum);
+
+  // Compute how many past months would be backfilled
+  const pastMonthsToBackfill = (() => {
+    const mockLoan = { id: '', startDate, cycleType } as any;
+    return getLoanMonths(mockLoan).filter((m) => m < currentMonthKey());
+  })();
 
   async function handleSave() {
     if (!borrowerName.trim()) {
@@ -60,7 +67,7 @@ export default function AddLoanScreen() {
 
     setSaving(true);
     try {
-      await createLoan({
+      const loanId = await createLoan({
         userId: user!.uid,
         borrowerName: borrowerName.trim(),
         borrowerPhone: borrowerPhone.trim() || undefined,
@@ -70,10 +77,12 @@ export default function AddLoanScreen() {
         startDate,
         cycleType,
         tenure: hasTenure ? parseInt(tenure) : undefined,
-        compoundEnabled,
         status: 'active',
         notes: notes.trim() || undefined,
       });
+      if (backfillPaid && pastMonthsToBackfill.length > 0) {
+        await createHistoricalPaidPayments(loanId, user!.uid, pastMonthsToBackfill, monthly);
+      }
       router.back();
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Failed to save loan');
@@ -222,21 +231,24 @@ export default function AddLoanScreen() {
           </View>
         </InputField>
 
-        {/* Compound Toggle */}
-        <View style={s.toggleRow}>
-          <View>
-            <Text style={s.toggleLabel}>{t('borrowers.compound')}</Text>
-            <Text style={s.toggleSub}>
-              {compoundEnabled ? t('payment.compoundNote') : t('payment.simpleNote')}
-            </Text>
+        {/* Backfill historical payments — shown only when start date is in the past */}
+        {pastMonthsToBackfill.length > 0 && (
+          <View style={s.toggleRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.toggleLabel}>Mark past months as paid</Text>
+              <Text style={s.toggleSub}>
+                Auto-mark {pastMonthsToBackfill.length} past month{pastMonthsToBackfill.length > 1 ? 's' : ''} as paid
+                (interest already collected before adding to app)
+              </Text>
+            </View>
+            <Switch
+              value={backfillPaid}
+              onValueChange={setBackfillPaid}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#fff"
+            />
           </View>
-          <Switch
-            value={compoundEnabled}
-            onValueChange={setCompoundEnabled}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
+        )}
 
         {/* Tenure Toggle */}
         <View style={s.toggleRow}>

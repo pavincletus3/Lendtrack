@@ -1,24 +1,30 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { format } from 'date-fns';
-import { formatCurrency, monthlyInterest } from './calculations';
-import type { Loan, Payment } from '@/types';
+import { formatCurrency, monthlyInterest, paidAmountFor } from './calculations';
+import type { Loan, Payment, BadgeStatus } from '@/types';
 
-const badgeStyle: Record<string, string> = {
+const badgeStyle: Record<BadgeStatus, string> = {
   paid: 'background:#10B981;color:#fff',
-  deferred: 'background:#60A5FA;color:#fff',
+  partial: 'background:#A78BFA;color:#fff',
   pending: 'background:#F59E0B;color:#fff',
   overdue: 'background:#EF4444;color:#fff',
 };
 
-function statusLabel(status: string, lang: 'en' | 'ta'): string {
-  const map: Record<string, Record<string, string>> = {
+function statusLabel(status: BadgeStatus, lang: 'en' | 'ta'): string {
+  const map: Record<BadgeStatus, Record<string, string>> = {
     paid: { en: 'Paid', ta: 'செலுத்தியது' },
-    deferred: { en: 'Deferred', ta: 'ஒத்திவைக்கப்பட்டது' },
+    partial: { en: 'Partial', ta: 'பகுதி' },
     pending: { en: 'Pending', ta: 'நிலுவை' },
     overdue: { en: 'Overdue', ta: 'தாமதம்' },
   };
   return map[status]?.[lang] ?? status;
+}
+
+function rowStatus(expected: number, paid: number): BadgeStatus {
+  if (paid >= expected && expected > 0) return 'paid';
+  if (paid > 0) return 'partial';
+  return 'pending';
 }
 
 export async function generateBorrowerPDF(
@@ -30,21 +36,20 @@ export async function generateBorrowerPDF(
     .filter((p) => p.loanId === loan.id && p.type === 'interest')
     .sort((a, b) => a.month.localeCompare(b.month));
 
-  const totalReceived = interestPayments
-    .filter((p) => p.status === 'paid')
-    .reduce((s, p) => s + (p.expectedAmount ?? 0), 0);
-
-  const totalDeferred = interestPayments
-    .filter((p) => p.status === 'deferred')
-    .reduce((s, p) => s + (p.expectedAmount ?? 0), 0);
+  const totalReceived = interestPayments.reduce((s, p) => s + paidAmountFor(p), 0);
+  const totalExpected = interestPayments.reduce((s, p) => s + (p.expectedAmount ?? 0), 0);
+  const totalOutstanding = Math.max(0, totalExpected - totalReceived);
 
   const rows = interestPayments
     .map((p) => {
-      const status = p.status ?? 'pending';
+      const expected = p.expectedAmount ?? 0;
+      const paid = paidAmountFor(p);
+      const status = rowStatus(expected, paid);
       return `
         <tr>
           <td>${p.month}</td>
-          <td style="text-align:right">${formatCurrency(p.expectedAmount ?? 0)}</td>
+          <td style="text-align:right">${formatCurrency(expected)}</td>
+          <td style="text-align:right">${formatCurrency(paid)}</td>
           <td><span style="padding:2px 8px;border-radius:12px;font-size:12px;${badgeStyle[status]}">${statusLabel(status, lang)}</span></td>
           <td>${p.paidAt ? format(new Date(p.paidAt), 'dd MMM yyyy') : '-'}</td>
           <td>${p.notes ?? ''}</td>
@@ -91,6 +96,7 @@ export async function generateBorrowerPDF(
           <tr>
             <th>Month</th>
             <th>Expected</th>
+            <th>Received</th>
             <th>Status</th>
             <th>Paid Date</th>
             <th>Notes</th>
@@ -101,7 +107,7 @@ export async function generateBorrowerPDF(
 
       <div class="summary">
         <div class="summary-box"><label>Total Received</label><span>${formatCurrency(totalReceived)}</span></div>
-        <div class="summary-box"><label>Total Deferred</label><span>${formatCurrency(totalDeferred)}</span></div>
+        <div class="summary-box"><label>Outstanding Interest</label><span>${formatCurrency(totalOutstanding)}</span></div>
         <div class="summary-box"><label>Outstanding Principal</label><span>${formatCurrency(loan.currentPrincipal)}</span></div>
       </div>
     </body>
@@ -132,14 +138,16 @@ export async function generateMonthlySummaryPDF(
       const payment = payments.find(
         (p) => p.loanId === loan.id && p.month === monthKey && p.type === 'interest'
       );
-      const status = payment?.status ?? 'pending';
+      const paid = paidAmountFor(payment);
+      const status = rowStatus(expected, paid);
       totalExpected += expected;
-      if (status === 'paid') totalCollected += expected;
+      totalCollected += paid;
       return `
         <tr>
           <td>${loan.borrowerName}</td>
           <td style="text-align:right">${formatCurrency(loan.currentPrincipal)}</td>
           <td style="text-align:right">${formatCurrency(expected)}</td>
+          <td style="text-align:right">${formatCurrency(paid)}</td>
           <td><span style="padding:2px 8px;border-radius:12px;font-size:12px;${badgeStyle[status]}">${statusLabel(status, lang)}</span></td>
         </tr>`;
     })
@@ -169,7 +177,7 @@ export async function generateMonthlySummaryPDF(
 
       <table>
         <thead>
-          <tr><th>Borrower</th><th>Principal</th><th>Expected Interest</th><th>Status</th></tr>
+          <tr><th>Borrower</th><th>Principal</th><th>Expected</th><th>Received</th><th>Status</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -177,7 +185,7 @@ export async function generateMonthlySummaryPDF(
       <div class="summary">
         <div class="summary-box"><label>Total Expected</label><span>${formatCurrency(totalExpected)}</span></div>
         <div class="summary-box"><label>Collected</label><span>${formatCurrency(totalCollected)}</span></div>
-        <div class="summary-box"><label>Remaining</label><span>${formatCurrency(totalExpected - totalCollected)}</span></div>
+        <div class="summary-box"><label>Remaining</label><span>${formatCurrency(Math.max(0, totalExpected - totalCollected))}</span></div>
       </div>
     </body>
     </html>`;

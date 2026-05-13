@@ -11,16 +11,27 @@ import {
   type User,
 } from 'firebase/auth';
 import { Platform } from 'react-native';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { auth } from '@/lib/firebase';
 import { createUserProfile, getUserProfile } from '@/lib/firestore/users';
 import type { UserProfile } from '@/types';
 
-GoogleSignin.configure({
-  webClientId: "355259328072-mhcd6lbgb3mafj2ksdiq0kpsbl9k3eaf.apps.googleusercontent.com",
-  offlineAccess: true,
-});
+// Google Sign-In has native modules not available in Expo Go.
+// Lazy-load + configure so the app still boots in Expo Go (email/password login works).
+let GoogleSignin: any = null;
+function getGoogleSignin() {
+  if (GoogleSignin) return GoogleSignin;
+  try {
+    GoogleSignin = require('@react-native-google-signin/google-signin').GoogleSignin;
+    GoogleSignin.configure({
+      webClientId: '355259328072-mhcd6lbgb3mafj2ksdiq0kpsbl9k3eaf.apps.googleusercontent.com',
+      offlineAccess: true,
+    });
+    return GoogleSignin;
+  } catch {
+    return null;
+  }
+}
 
 interface AuthState {
   user: User | null;
@@ -77,10 +88,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loginWithGoogle: async () => {
+    const gs = getGoogleSignin();
+    if (!gs) throw new Error('Google Sign-In is not available in Expo Go. Use a development build.');
     set({ loading: true });
     try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const response = await GoogleSignin.signIn();
+      await gs.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const response = await gs.signIn();
       if (response.type === 'cancelled') return;
       if (response.type !== 'success') throw new Error('Google Sign-In failed');
       const idToken = response.data?.idToken;
@@ -133,7 +146,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await signOut(auth);
-    try { await GoogleSignin.signOut(); } catch { /* not signed in with Google */ }
+    const gs = getGoogleSignin();
+    if (gs) {
+      try { await gs.signOut(); } catch { /* not signed in with Google */ }
+    }
     set({ user: null, profile: null });
   },
 

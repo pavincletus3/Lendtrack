@@ -24,6 +24,9 @@ function toDate(ts: any): Date {
 }
 
 function fromFirestore(id: string, data: Record<string, any>): Payment {
+  // Legacy 'deferred' records are treated as having no status (acts as pending).
+  const rawStatus = data.status;
+  const status: Payment['status'] = rawStatus === 'paid' ? 'paid' : undefined;
   return {
     id,
     loanId: data.loanId,
@@ -31,7 +34,8 @@ function fromFirestore(id: string, data: Record<string, any>): Payment {
     month: data.month,
     type: data.type,
     expectedAmount: data.expectedAmount,
-    status: data.status,
+    paidAmount: data.paidAmount,
+    status,
     paidAt: data.paidAt ? toDate(data.paidAt) : undefined,
     amount: data.amount,
     notes: data.notes ?? undefined,
@@ -39,46 +43,46 @@ function fromFirestore(id: string, data: Record<string, any>): Payment {
   };
 }
 
-/** Record an interest payment as Paid */
-export async function markInterestPaid(
-  loanId: string,
-  userId: string,
-  month: string,
-  expectedAmount: number
-): Promise<string> {
+export interface MarkPaidInput {
+  loanId: string;
+  userId: string;
+  month: string;
+  expectedAmount: number;
+  paidAmount: number;
+  paidAt: Date;
+  notes?: string;
+}
+
+/** Record (or update) an interest payment as paid for a given month */
+export async function markInterestPaid(input: MarkPaidInput, existingPaymentId?: string): Promise<string> {
+  const payload = {
+    loanId: input.loanId,
+    userId: input.userId,
+    month: input.month,
+    type: 'interest' as const,
+    expectedAmount: input.expectedAmount,
+    paidAmount: input.paidAmount,
+    status: 'paid' as const,
+    paidAt: Timestamp.fromDate(input.paidAt),
+    notes: input.notes ?? null,
+  };
+  if (existingPaymentId) {
+    await updateDoc(doc(db, COLLECTION, existingPaymentId), payload);
+    return existingPaymentId;
+  }
   const ref = await addDoc(collection(db, COLLECTION), {
-    loanId,
-    userId,
-    month,
-    type: 'interest',
-    expectedAmount,
-    status: 'paid',
-    paidAt: serverTimestamp(),
+    ...payload,
     createdAt: serverTimestamp(),
   });
   return ref.id;
 }
 
-/** Defer an interest payment for a month */
-export async function markInterestDeferred(
-  loanId: string,
-  userId: string,
-  month: string,
-  expectedAmount: number
-): Promise<string> {
-  const ref = await addDoc(collection(db, COLLECTION), {
-    loanId,
-    userId,
-    month,
-    type: 'interest',
-    expectedAmount,
-    status: 'deferred',
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
+/** Delete a payment record (used to "unmark" a paid month, or remove a principal repayment) */
+export async function deletePayment(paymentId: string): Promise<void> {
+  await deleteDoc(doc(db, COLLECTION, paymentId));
 }
 
-/** Update an existing payment record */
+/** Update an existing payment record (partial update) */
 export async function updatePayment(
   paymentId: string,
   updates: Partial<Payment>
@@ -87,8 +91,8 @@ export async function updatePayment(
   const data: Record<string, any> = { ...updates };
   delete data.id;
   delete data.createdAt;
-  if (updates.status === 'paid') {
-    data.paidAt = serverTimestamp();
+  if (updates.paidAt instanceof Date) {
+    data.paidAt = Timestamp.fromDate(updates.paidAt);
   }
   await updateDoc(ref, data);
 }
@@ -101,7 +105,7 @@ export async function recordPrincipalRepayment(
   type: 'principal_partial' | 'principal_full',
   notes?: string
 ): Promise<string> {
-  const month = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const month = new Date().toISOString().slice(0, 7);
   const ref = await addDoc(collection(db, COLLECTION), {
     loanId,
     userId,
@@ -114,15 +118,21 @@ export async function recordPrincipalRepayment(
   return ref.id;
 }
 
-/** Mark multiple loans' interest as paid for a given month (skips already-paid loans) */
+/** Mark multiple loans' interest as paid (full amount, paid today) — skips already-paid loans */
 export async function bulkMarkInterestPaid(
   items: Array<{ loanId: string; userId: string; month: string; expectedAmount: number }>,
   existingPayments: Payment[]
 ): Promise<void> {
+  const today = new Date();
   const tasks = items
     .filter((item) => {
       const already = existingPayments.find(
-        (p) => p.loanId === item.loanId && p.month === item.month && p.type === 'interest' && p.status === 'paid'
+        (p) =>
+          p.loanId === item.loanId &&
+          p.month === item.month &&
+          p.type === 'interest' &&
+          p.status === 'paid' &&
+          (p.paidAmount ?? p.expectedAmount ?? 0) >= (p.expectedAmount ?? item.expectedAmount)
       );
       return !already;
     })
@@ -130,10 +140,17 @@ export async function bulkMarkInterestPaid(
       const existing = existingPayments.find(
         (p) => p.loanId === item.loanId && p.month === item.month && p.type === 'interest'
       );
-      if (existing) {
-        return updatePayment(existing.id, { status: 'paid' });
-      }
-      return markInterestPaid(item.loanId, item.userId, item.month, item.expectedAmount);
+      return markInterestPaid(
+        {
+          loanId: item.loanId,
+          userId: item.userId,
+          month: item.month,
+          expectedAmount: item.expectedAmount,
+          paidAmount: item.expectedAmount,
+          paidAt: today,
+        },
+        existing?.id
+      );
     });
   await Promise.all(tasks);
 }
@@ -158,6 +175,33 @@ export function subscribePayments(
   return onSnapshot(q, (snap) => {
     onUpdate(snap.docs.map((d) => fromFirestore(d.id, d.data())));
   });
+}
+
+/** Bulk-create historical interest payments marked as paid (for backfilling past months) */
+export async function createHistoricalPaidPayments(
+  loanId: string,
+  userId: string,
+  months: string[],
+  expectedAmount: number
+): Promise<void> {
+  await Promise.all(
+    months.map((month) => {
+      // Use the last day of that month as the paid date for historicals
+      const [y, m] = month.split('-').map(Number);
+      const paidAt = new Date(y, m, 0);
+      return addDoc(collection(db, COLLECTION), {
+        loanId,
+        userId,
+        month,
+        type: 'interest',
+        expectedAmount,
+        paidAmount: expectedAmount,
+        status: 'paid',
+        paidAt: Timestamp.fromDate(paidAt),
+        createdAt: serverTimestamp(),
+      });
+    })
+  );
 }
 
 /** Delete all payments belonging to a loan (call before deleting the loan) */

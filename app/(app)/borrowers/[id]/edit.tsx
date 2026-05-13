@@ -38,7 +38,6 @@ export default function EditLoanScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [hasTenure, setHasTenure] = useState(!!loan?.tenure);
   const [tenure, setTenure] = useState(String(loan?.tenure ?? '12'));
-  const [compoundEnabled, setCompoundEnabled] = useState(loan?.compoundEnabled ?? false);
   const [notes, setNotes] = useState(loan?.notes ?? '');
   const [saving, setSaving] = useState(false);
   const [contactPickerVisible, setContactPickerVisible] = useState(false);
@@ -66,14 +65,13 @@ export default function EditLoanScreen() {
 
     setSaving(true);
     try {
-      await updateLoan(loan.id, {
+      await updateLoan(loan!.id, {
         borrowerName: borrowerName.trim(),
         borrowerPhone: borrowerPhone.trim() || undefined,
         interestRate: rateNum,
         cycleType,
         startDate,
         tenure: hasTenure ? parseInt(tenure) || undefined : undefined,
-        compoundEnabled,
         notes: notes.trim() || undefined,
       });
       router.back();
@@ -209,22 +207,6 @@ export default function EditLoanScreen() {
             ))}
           </View>
         </InputField>
-
-        {/* Compound Toggle */}
-        <View style={s.toggleRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.toggleLabel}>{t('borrowers.compound')}</Text>
-            <Text style={s.toggleSub}>
-              {compoundEnabled ? t('payment.compoundNote') : t('payment.simpleNote')}
-            </Text>
-          </View>
-          <Switch
-            value={compoundEnabled}
-            onValueChange={setCompoundEnabled}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
 
         {/* Tenure Toggle */}
         <View style={s.toggleRow}>

@@ -19,7 +19,6 @@ export function currentMonthKey(): string {
 /**
  * The first month that interest is due for a loan.
  * Interest starts the month AFTER the start date.
- * e.g. loan started Feb 3 → first interest month is Mar.
  */
 export function loanFirstInterestMonth(loan: Loan): string {
   const start = new Date(loan.startDate);
@@ -30,16 +29,9 @@ export function loanFirstInterestMonth(loan: Loan): string {
   return toMonthKey(firstMonth);
 }
 
-/**
- * Returns true if the given loan has interest due in the given month.
- * A loan is never due in its start month or any prior month.
- */
+/** Returns true if the given loan has interest due in the given month. */
 export function isDueInMonth(loan: Loan, monthKey: string): boolean {
-  // Never due before interest starts
   if (monthKey < loanFirstInterestMonth(loan)) return false;
-  // Calendar cycle: due every month from the first interest month onwards
-  if (loan.cycleType === 'calendar') return true;
-  // Anniversary cycle: same rule — due every month after the start month
   return true;
 }
 
@@ -47,12 +39,25 @@ export function isDueInMonth(loan: Loan, monthKey: string): boolean {
 export function getDueDate(loan: Loan, monthKey: string): Date {
   const [year, month] = monthKey.split('-').map(Number);
   if (loan.cycleType === 'calendar') {
-    // Due on last day of month
     return new Date(year, month, 0);
   }
-  // Anniversary: due on same day as start date each month
   const day = getDate(new Date(loan.startDate));
   return new Date(year, month - 1, day);
+}
+
+/** Find an interest payment record for a given loan + month */
+export function findInterestPayment(loanId: string, monthKey: string, payments: Payment[]): Payment | undefined {
+  return payments.find(
+    (p) => p.loanId === loanId && p.month === monthKey && p.type === 'interest'
+  );
+}
+
+/** Get the amount paid for an interest payment (handles legacy records without paidAmount) */
+export function paidAmountFor(payment: Payment | undefined): number {
+  if (!payment || payment.status !== 'paid') return 0;
+  if (typeof payment.paidAmount === 'number') return payment.paidAmount;
+  // Legacy record marked 'paid' without explicit paidAmount → treat as fully paid
+  return payment.expectedAmount ?? 0;
 }
 
 /** Get status badge for a loan in a given month */
@@ -62,17 +67,15 @@ export function getLoanMonthStatus(
   payments: Payment[],
   overdueAlertDays = 5
 ): BadgeStatus {
-  // No interest due before the first interest month — not applicable
   if (!isDueInMonth(loan, monthKey)) return 'pending';
 
-  const interestPayment = payments.find(
-    (p) => p.loanId === loan.id && p.month === monthKey && p.type === 'interest'
-  );
+  const payment = findInterestPayment(loan.id, monthKey, payments);
+  const expected = payment?.expectedAmount ?? monthlyInterest(loan.currentPrincipal, loan.interestRate);
+  const paid = paidAmountFor(payment);
 
-  if (interestPayment?.status === 'paid') return 'paid';
-  if (interestPayment?.status === 'deferred') return 'deferred';
+  if (paid >= expected && expected > 0) return 'paid';
+  if (paid > 0) return 'partial';
 
-  // Check if overdue (only for months that are in the past)
   const dueDate = getDueDate(loan, monthKey);
   const overdueThreshold = new Date(dueDate);
   overdueThreshold.setDate(overdueThreshold.getDate() + overdueAlertDays);
@@ -96,40 +99,44 @@ export function computeDashboardStats(
   );
 
   const interestPayments = payments.filter((p) => p.type === 'interest');
-  const paidPayments = interestPayments.filter((p) => p.status === 'paid');
-  const deferredPayments = interestPayments.filter((p) => p.status === 'deferred');
 
-  const totalInterestReceived = paidPayments.reduce(
-    (sum, p) => sum + (p.expectedAmount ?? 0),
+  const totalInterestReceived = interestPayments.reduce(
+    (sum, p) => sum + paidAmountFor(p),
     0
   );
 
-  const totalDeferredAccrued = deferredPayments.reduce(
-    (sum, p) => sum + (p.expectedAmount ?? 0),
-    0
-  );
-  const totalInterestAccrued = totalInterestReceived + totalDeferredAccrued;
+  // Outstanding = unpaid portion of expected interest across all months that are due
+  let totalOutstandingInterest = 0;
+  for (const loan of activeLoans) {
+    // Walk every due month from first-interest-month up to current month
+    let cursor = new Date(loan.startDate);
+    cursor = addMonths(new Date(cursor.getFullYear(), cursor.getMonth(), 1), 1);
+    const end = new Date();
+    const endStart = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= endStart) {
+      const mk = toMonthKey(cursor);
+      const p = findInterestPayment(loan.id, mk, payments);
+      const expected = p?.expectedAmount ?? monthlyInterest(loan.currentPrincipal, loan.interestRate);
+      const paid = paidAmountFor(p);
+      const owed = Math.max(0, expected - paid);
+      totalOutstandingInterest += owed;
+      cursor = addMonths(cursor, 1);
+    }
+  }
 
-  // Expected this month = only loans whose first interest month ≤ current month
   const expectedThisMonth = activeLoans.reduce((sum, loan) => {
     if (!isDueInMonth(loan, monthKey)) return sum;
     return sum + monthlyInterest(loan.currentPrincipal, loan.interestRate);
   }, 0);
 
-  // Already collected this month
-  const collectedThisMonth = payments
-    .filter(
-      (p) =>
-        p.type === 'interest' &&
-        p.status === 'paid' &&
-        p.month === monthKey
-    )
-    .reduce((sum, p) => sum + (p.expectedAmount ?? 0), 0);
+  const collectedThisMonth = interestPayments
+    .filter((p) => p.month === monthKey)
+    .reduce((sum, p) => sum + paidAmountFor(p), 0);
 
   return {
     totalPrincipalInRotation,
     totalInterestReceived,
-    totalInterestAccrued,
+    totalOutstandingInterest,
     expectedThisMonth,
     collectedThisMonth,
   };
@@ -142,6 +149,66 @@ export function formatCurrency(amount: number): string {
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+export interface UnpaidMonth {
+  month: string;
+  expected: number;
+  alreadyPaid: number;
+  owed: number;
+  paymentId?: string;
+}
+
+/** List of months with unpaid interest (oldest first). Includes partials. */
+export function getUnpaidInterestMonths(loan: Loan, payments: Payment[]): UnpaidMonth[] {
+  const months = getLoanMonths(loan).slice().reverse(); // oldest first
+  const result: UnpaidMonth[] = [];
+  const expected = monthlyInterest(loan.currentPrincipal, loan.interestRate);
+  for (const month of months) {
+    const p = findInterestPayment(loan.id, month, payments);
+    const exp = p?.expectedAmount ?? expected;
+    const paid = paidAmountFor(p);
+    const owed = Math.max(0, exp - paid);
+    if (owed > 0) {
+      result.push({ month, expected: exp, alreadyPaid: paid, owed, paymentId: p?.id });
+    }
+  }
+  return result;
+}
+
+export interface CatchupAllocation {
+  month: string;
+  expected: number;
+  previouslyPaid: number;
+  newPaidAmount: number; // total paidAmount to write (previouslyPaid + applied)
+  applied: number; // how much of the lump sum was applied to this month
+  paymentId?: string;
+  fullyPaid: boolean;
+}
+
+/** Allocate a lump-sum payment across unpaid months, oldest first. */
+export function distributeCatchup(unpaid: UnpaidMonth[], amount: number): {
+  allocations: CatchupAllocation[];
+  leftover: number;
+} {
+  let remaining = amount;
+  const allocations: CatchupAllocation[] = [];
+  for (const u of unpaid) {
+    if (remaining <= 0) break;
+    const applied = Math.min(remaining, u.owed);
+    remaining -= applied;
+    const newPaidAmount = u.alreadyPaid + applied;
+    allocations.push({
+      month: u.month,
+      expected: u.expected,
+      previouslyPaid: u.alreadyPaid,
+      newPaidAmount,
+      applied,
+      paymentId: u.paymentId,
+      fullyPaid: newPaidAmount >= u.expected,
+    });
+  }
+  return { allocations, leftover: remaining };
 }
 
 /** Get list of month keys from loan's first interest month to current month */
@@ -159,5 +226,5 @@ export function getLoanMonths(loan: Loan): string[] {
     months.push(toMonthKey(cursor));
     cursor = addMonths(cursor, 1);
   }
-  return months.reverse(); // newest first
+  return months.reverse();
 }

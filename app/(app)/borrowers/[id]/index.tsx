@@ -22,23 +22,27 @@ import {
   getLoanMonthStatus,
   getLoanMonths,
   monthlyInterest,
+  paidAmountFor,
 } from '@/lib/calculations';
-import { markInterestPaid, markInterestDeferred, updatePayment } from '@/lib/firestore/payments';
-import { updateLoan, closeLoan, reopenLoan, deleteLoan } from '@/lib/firestore/loans';
+import { markInterestPaid, deletePayment } from '@/lib/firestore/payments';
+import { closeLoan, reopenLoan as reopenLoanFn, deleteLoan, updateLoan } from '@/lib/firestore/loans';
 import { generateBorrowerPDF } from '@/lib/pdf';
+import { PaymentEntryModal } from '@/components/PaymentEntryModal';
+import { CatchupPaymentModal } from '@/components/CatchupPaymentModal';
+import { getUnpaidInterestMonths } from '@/lib/calculations';
 import type { BadgeStatus, Payment } from '@/types';
 
 const BADGE_COLORS: Record<BadgeStatus, string> = {
   paid: '#10B981',
+  partial: '#A78BFA',
   pending: '#F59E0B',
-  deferred: '#60A5FA',
   overdue: '#EF4444',
 };
 
 const LEGEND: Array<{ key: BadgeStatus; color: string }> = [
   { key: 'paid', color: '#10B981' },
+  { key: 'partial', color: '#A78BFA' },
   { key: 'pending', color: '#F59E0B' },
-  { key: 'deferred', color: '#60A5FA' },
   { key: 'overdue', color: '#EF4444' },
 ];
 
@@ -54,10 +58,11 @@ export default function BorrowerDetailScreen() {
   const payments = allPayments.filter((p) => p.loanId === id);
   const overdueAlertDays = useSettingsStore((s) => s.overdueAlertDays);
   const language = useSettingsStore((s) => s.language);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMonth, setModalMonth] = useState<string | null>(null);
+  const [catchupOpen, setCatchupOpen] = useState(false);
 
-  // Must be before any early return to satisfy Rules of Hooks
   const months = useMemo(() => loan ? getLoanMonths(loan) : [], [loan?.id, loan?.startDate?.toString()]);
 
   if (!loan) {
@@ -75,102 +80,113 @@ export default function BorrowerDetailScreen() {
 
   const s = styles(colors);
 
-  async function handleMarkPaid(month: string, existingPayment?: Payment) {
-    setActionLoading(month + '-paid');
-    try {
-      if (existingPayment) {
-        await updatePayment(existingPayment.id, { status: 'paid' });
-      } else {
-        await markInterestPaid(loan!.id, user!.uid, month, monthly);
-      }
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setActionLoading(null);
-    }
+  function openModalFor(month: string) {
+    setModalMonth(month);
+    setModalOpen(true);
   }
 
-  async function handleDefer(month: string, existingPayment?: Payment) {
-    setActionLoading(month + '-defer');
-    try {
-      if (existingPayment) {
-        await updatePayment(existingPayment.id, { status: 'deferred' });
-      } else {
-        await markInterestDeferred(loan!.id, user!.uid, month, monthly);
-        if (loan!.compoundEnabled) {
-          const newPrincipal = loan!.currentPrincipal + monthly;
-          await updateLoan(loan!.id, { currentPrincipal: newPrincipal });
-        }
-      }
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setActionLoading(null);
-    }
+  const activeMonthPayment = modalMonth
+    ? payments.find((p) => p.month === modalMonth && p.type === 'interest')
+    : undefined;
+
+  async function handleSavePayment(data: { paidAmount: number; paidAt: Date; notes?: string }) {
+    if (!modalMonth) return;
+    await markInterestPaid(
+      {
+        loanId: loan!.id,
+        userId: user!.uid,
+        month: modalMonth,
+        expectedAmount: activeMonthPayment?.expectedAmount ?? monthly,
+        paidAmount: data.paidAmount,
+        paidAt: data.paidAt,
+        notes: data.notes,
+      },
+      activeMonthPayment?.id
+    );
+  }
+
+  async function handleDeletePayment() {
+    if (!activeMonthPayment) return;
+    await deletePayment(activeMonthPayment.id);
+  }
+
+  async function handleDeletePrincipalRepayment(p: Payment) {
+    Alert.alert(
+      t('payment.deletePrincipal'),
+      t('payment.deletePrincipalConfirm'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('common.delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePayment(p.id);
+              // Restore principal: full → re-open + add back, partial → just add back
+              const restored = loan!.currentPrincipal + (p.amount ?? 0);
+              await updateLoan(loan!.id, { currentPrincipal: restored });
+              if (p.type === 'principal_full') {
+                await reopenLoanFn(loan!.id);
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleCloseLoan() {
-    Alert.alert(
-      t('borrowers.close'),
-      t('borrowers.closeConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await closeLoan(loan!.id);
-              router.back();
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          },
+    Alert.alert(t('borrowers.close'), t('borrowers.closeConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.confirm'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await closeLoan(loan!.id);
+            router.back();
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   async function handleReopenLoan() {
-    Alert.alert(
-      t('borrowers.reopen'),
-      t('borrowers.reopenConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.confirm'),
-          onPress: async () => {
-            try {
-              await reopenLoan(loan!.id);
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          },
+    Alert.alert(t('borrowers.reopen'), t('borrowers.reopenConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.confirm'),
+        onPress: async () => {
+          try {
+            await reopenLoanFn(loan!.id);
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   async function handleDeleteLoan() {
-    Alert.alert(
-      'Delete Loan',
-      `Permanently delete "${loan!.borrowerName}"? This cannot be undone.`,
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteLoan(loan!.id, user!.uid);
-              router.replace('/(app)/borrowers');
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          },
+    Alert.alert('Delete Loan', `Permanently delete "${loan!.borrowerName}"? This cannot be undone.`, [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteLoan(loan!.id, user!.uid);
+            router.replace('/(app)/borrowers');
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   async function handleExportPDF() {
@@ -200,8 +216,38 @@ export default function BorrowerDetailScreen() {
     );
   }
 
+  const modalMonthLabel = (() => {
+    if (!modalMonth) return '';
+    const [y, m] = modalMonth.split('-');
+    return new Date(parseInt(y), parseInt(m) - 1, 1).toLocaleDateString(
+      language === 'ta' ? 'ta-IN' : 'en-IN',
+      { month: 'long', year: 'numeric' }
+    );
+  })();
+
   return (
     <View style={s.container}>
+      <CatchupPaymentModal
+        visible={catchupOpen}
+        loan={loan}
+        payments={payments}
+        userId={user!.uid}
+        language={language as 'en' | 'ta'}
+        onClose={() => setCatchupOpen(false)}
+      />
+      <PaymentEntryModal
+        visible={modalOpen}
+        mode={activeMonthPayment?.status === 'paid' ? 'edit' : 'create'}
+        monthLabel={modalMonthLabel}
+        expectedAmount={activeMonthPayment?.expectedAmount ?? monthly}
+        defaultAmount={activeMonthPayment ? paidAmountFor(activeMonthPayment) || undefined : undefined}
+        defaultDate={activeMonthPayment?.paidAt}
+        defaultNotes={activeMonthPayment?.notes}
+        onClose={() => setModalOpen(false)}
+        onSave={handleSavePayment}
+        onDelete={activeMonthPayment?.status === 'paid' ? handleDeletePayment : undefined}
+      />
+
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.headerBtn}>
@@ -253,18 +299,6 @@ export default function BorrowerDetailScreen() {
             )}
           </View>
 
-          {/* Compound badge */}
-          <View style={s.compoundRow}>
-            <Ionicons
-              name={loan.compoundEnabled ? 'git-merge-outline' : 'remove-circle-outline'}
-              size={14}
-              color={loan.compoundEnabled ? colors.warning : colors.textMuted}
-            />
-            <Text style={[s.compoundText, { color: loan.compoundEnabled ? colors.warning : colors.textMuted }]}>
-              {loan.compoundEnabled ? t('payment.compoundNote') : t('payment.simpleNote')}
-            </Text>
-          </View>
-
           {/* Contact buttons */}
           {loan.borrowerPhone && (
             <View style={s.contactRow}>
@@ -281,6 +315,15 @@ export default function BorrowerDetailScreen() {
 
           {/* Action buttons */}
           <View style={s.actionRow}>
+            {loan.status === 'active' && getUnpaidInterestMonths(loan, payments).length > 1 && (
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: colors.warning }]}
+                onPress={() => setCatchupOpen(true)}
+              >
+                <Ionicons name="wallet-outline" size={16} color="#fff" />
+                <Text style={s.actionBtnText}>{t('payment.catchupPayment')}</Text>
+              </TouchableOpacity>
+            )}
             {loan.status === 'active' && (
               <TouchableOpacity
                 style={[s.actionBtn, { backgroundColor: colors.primary }]}
@@ -325,91 +368,69 @@ export default function BorrowerDetailScreen() {
         <Text style={s.timelineTitle}>{t('payment.legend')} — Interest</Text>
 
         {months.map((month) => {
-          const loanPayments = payments.filter((p) => p.loanId === loan.id);
-          const status = getLoanMonthStatus(loan, month, loanPayments, overdueAlertDays);
+          const status = getLoanMonthStatus(loan, month, payments, overdueAlertDays);
           const payment = payments.find(
             (p) => p.loanId === loan.id && p.month === month && p.type === 'interest'
           );
-          const isPaid = status === 'paid';
-          const isDeferred = status === 'deferred';
-          const isLoadingPaid = actionLoading === month + '-paid';
-          const isLoadingDefer = actionLoading === month + '-defer';
+          const hasRecord = payment?.status === 'paid';
+          const paid = paidAmountFor(payment);
+          const expected = payment?.expectedAmount ?? monthly;
 
           const [year, mo] = month.split('-');
           const monthLabel = new Date(parseInt(year), parseInt(mo) - 1, 1)
             .toLocaleDateString(language === 'ta' ? 'ta-IN' : 'en-IN', { month: 'long', year: 'numeric' });
 
           return (
-            <View key={month} style={s.monthRow}>
+            <TouchableOpacity
+              key={month}
+              style={s.monthRow}
+              onPress={() => openModalFor(month)}
+              activeOpacity={0.7}
+            >
               <View style={s.monthLeft}>
                 <View style={[s.monthDot, { backgroundColor: BADGE_COLORS[status] }]} />
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={s.monthLabel}>{monthLabel}</Text>
                   <Text style={[s.monthAmount, { color: colors.primary }]}>
-                    {formatCurrency(monthly)}
+                    {hasRecord ? formatCurrency(paid) : formatCurrency(expected)}
+                    {hasRecord && status === 'partial' && (
+                      <Text style={[s.monthMeta, { color: colors.warning }]}>
+                        {' '}/ {formatCurrency(expected)}
+                      </Text>
+                    )}
                   </Text>
-                  {isPaid && payment?.paidAt && (
+                  {hasRecord && payment?.paidAt && (
                     <Text style={s.monthMeta}>
-                      {t('payment.paidOn')}: {format(new Date(payment.paidAt), 'dd MMM')}
+                      {t('payment.paidOn')}: {format(new Date(payment.paidAt), 'dd MMM yyyy')}
                     </Text>
                   )}
-                  {isDeferred && (
-                    <Text style={[s.monthMeta, { color: colors.warning }]}>
-                      {t('payment.deferred')}
-                      {loan.compoundEnabled ? ' → added to principal' : ''}
-                    </Text>
+                  {payment?.notes && (
+                    <Text style={[s.monthMeta, { fontStyle: 'italic' }]}>{payment.notes}</Text>
                   )}
                 </View>
               </View>
 
               <View style={s.monthActions}>
-                {!isPaid && !isDeferred && (
-                  <TouchableOpacity
-                    style={[s.monthBtn, { backgroundColor: colors.success }]}
-                    onPress={() => handleMarkPaid(month, payment)}
-                    disabled={!!actionLoading}
-                  >
-                    {isLoadingPaid
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Ionicons name="checkmark" size={16} color="#fff" />
-                    }
+                {!hasRecord && (
+                  <View style={[s.monthBtn, { backgroundColor: colors.success }]}>
+                    <Ionicons name="checkmark" size={16} color="#fff" />
                     <Text style={s.monthBtnText}>{t('payment.markPaid')}</Text>
-                  </TouchableOpacity>
-                )}
-                {isPaid && (
-                  <View style={[s.monthBadge, { backgroundColor: colors.success + '22' }]}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                    <Text style={[s.monthBadgeText, { color: colors.success }]}>{t('payment.paid')}</Text>
                   </View>
                 )}
-                {!isDeferred && !isPaid && loan.status === 'active' && (
-                  <TouchableOpacity
-                    style={[s.monthBtn, { backgroundColor: colors.info + '22', borderWidth: 1, borderColor: colors.info }]}
-                    onPress={() => handleDefer(month, payment)}
-                    disabled={!!actionLoading}
-                  >
-                    {isLoadingDefer
-                      ? <ActivityIndicator size="small" color={colors.info} />
-                      : <Ionicons name="time-outline" size={16} color={colors.info} />
-                    }
-                    <Text style={[s.monthBtnText, { color: colors.info }]}>{t('payment.defer')}</Text>
-                  </TouchableOpacity>
-                )}
-                {isDeferred && (
-                  <TouchableOpacity
-                    style={[s.monthBtn, { backgroundColor: colors.success }]}
-                    onPress={() => handleMarkPaid(month, payment)}
-                    disabled={!!actionLoading}
-                  >
-                    {isLoadingPaid
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Ionicons name="checkmark" size={16} color="#fff" />
-                    }
-                    <Text style={s.monthBtnText}>{t('payment.markPaid')}</Text>
-                  </TouchableOpacity>
+                {hasRecord && (
+                  <View style={[s.monthBadge, { backgroundColor: BADGE_COLORS[status] + '22' }]}>
+                    <Ionicons
+                      name={status === 'partial' ? 'time-outline' : 'checkmark-circle'}
+                      size={16}
+                      color={BADGE_COLORS[status]}
+                    />
+                    <Text style={[s.monthBadgeText, { color: BADGE_COLORS[status] }]}>
+                      {t(`payment.${status}`)}
+                    </Text>
+                  </View>
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
 
@@ -427,7 +448,7 @@ export default function BorrowerDetailScreen() {
               <View key={p.id} style={[s.monthRow, { borderLeftWidth: 3, borderLeftColor: colors.primary }]}>
                 <View style={s.monthLeft}>
                   <Ionicons name="arrow-down-circle" size={20} color={colors.primary} style={{ marginTop: 2 }} />
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={s.monthLabel}>
                       {p.type === 'principal_full' ? t('repayment.full').split(' (')[0] : t('repayment.partial')}
                     </Text>
@@ -440,6 +461,9 @@ export default function BorrowerDetailScreen() {
                     </Text>
                   </View>
                 </View>
+                <TouchableOpacity onPress={() => handleDeletePrincipalRepayment(p)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                </TouchableOpacity>
               </View>
             ))}
           </>
@@ -487,8 +511,6 @@ const styles = (colors: any) =>
     summaryRow: { flexDirection: 'row', justifyContent: 'space-around' },
     summaryMeta: { gap: 4 },
     metaText: { fontSize: 12, color: colors.textMuted },
-    compoundRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
-    compoundText: { fontSize: 11, flex: 1 },
     contactRow: { flexDirection: 'row', gap: 10 },
     contactBtn: {
       flex: 1,

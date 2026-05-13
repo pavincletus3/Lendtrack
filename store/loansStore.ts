@@ -19,7 +19,7 @@ interface LoansState {
 const emptyStats: DashboardStats = {
   totalPrincipalInRotation: 0,
   totalInterestReceived: 0,
-  totalInterestAccrued: 0,
+  totalOutstandingInterest: 0,
   expectedThisMonth: 0,
   collectedThisMonth: 0,
 };

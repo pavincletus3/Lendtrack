@@ -19,7 +19,6 @@ export interface Loan {
   startDate: Date;
   cycleType: 'calendar' | 'anniversary';
   tenure?: number; // months, optional
-  compoundEnabled: boolean;
   status: 'active' | 'closed';
   closedAt?: Date;
   notes?: string;
@@ -34,15 +33,16 @@ export interface Payment {
   type: 'interest' | 'principal_partial' | 'principal_full';
   // For interest payments
   expectedAmount?: number;
-  status?: 'paid' | 'deferred';
-  paidAt?: Date;
+  paidAmount?: number; // actual amount received (may be < expectedAmount for partial)
+  status?: 'paid';
+  paidAt?: Date; // user-selected date the borrower actually paid
   // For principal repayments
   amount?: number;
   notes?: string;
   createdAt: Date;
 }
 
-export type BadgeStatus = 'paid' | 'pending' | 'deferred' | 'overdue';
+export type BadgeStatus = 'paid' | 'partial' | 'pending' | 'overdue';
 
 export interface MonthSummary {
   month: string; // 'YYYY-MM'
@@ -57,7 +57,7 @@ export interface MonthSummary {
 export interface DashboardStats {
   totalPrincipalInRotation: number;
   totalInterestReceived: number;
-  totalInterestAccrued: number;
+  totalOutstandingInterest: number;
   expectedThisMonth: number;
   collectedThisMonth: number;
 }

@@ -26,10 +26,12 @@ import type { Loan, BadgeStatus } from '@/types';
 
 const BADGE_CONFIG: Record<BadgeStatus, { bg: string }> = {
   paid: { bg: '#10B981' },
+  partial: { bg: '#A78BFA' },
   pending: { bg: '#F59E0B' },
-  deferred: { bg: '#60A5FA' },
   overdue: { bg: '#EF4444' },
 };
+
+type StatusFilter = 'all' | 'overdue' | 'pending' | 'paid';
 
 export default function BorrowersScreen() {
   const { t } = useTranslation();
@@ -40,14 +42,27 @@ export default function BorrowersScreen() {
   const overdueAlertDays = useSettingsStore((s) => s.overdueAlertDays);
   const [search, setSearch] = useState('');
   const [showClosed, setShowClosed] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   const monthKey = currentMonthKey();
 
   const filtered = loans.filter((l) => {
     const matchSearch = l.borrowerName.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = showClosed ? l.status === 'closed' : l.status === 'active';
-    return matchSearch && matchStatus;
+    const matchOpenClosed = showClosed ? l.status === 'closed' : l.status === 'active';
+    if (!matchSearch || !matchOpenClosed) return false;
+    if (showClosed || statusFilter === 'all') return true;
+    const loanPayments = payments.filter((p) => p.loanId === l.id);
+    const monthStatus = getLoanMonthStatus(l, monthKey, loanPayments, overdueAlertDays);
+    if (statusFilter === 'paid') return monthStatus === 'paid' || monthStatus === 'partial';
+    return monthStatus === statusFilter;
   });
+
+  const FILTERS: Array<{ key: StatusFilter; labelKey: string }> = [
+    { key: 'all', labelKey: 'borrowers.filterAll' },
+    { key: 'overdue', labelKey: 'borrowers.filterOverdue' },
+    { key: 'pending', labelKey: 'borrowers.filterPending' },
+    { key: 'paid', labelKey: 'borrowers.filterPaid' },
+  ];
 
   const s = styles(colors);
 
@@ -164,6 +179,29 @@ export default function BorrowersScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Status filter chips (active only) */}
+      {!showClosed && (
+        <View style={s.chipRow}>
+          {FILTERS.map((f) => {
+            const active = statusFilter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                onPress={() => setStatusFilter(f.key)}
+                style={[
+                  s.chip,
+                  active && { backgroundColor: colors.primary, borderColor: colors.primary },
+                ]}
+              >
+                <Text style={[s.chipText, { color: active ? '#fff' : colors.textMuted }]}>
+                  {t(f.labelKey)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -229,6 +267,16 @@ const styles = (colors: any) =>
       marginBottom: 8,
     },
     tab: { fontSize: 14, fontWeight: '600', color: colors.textMuted, paddingBottom: 8 },
+    chipRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10, flexWrap: 'wrap' },
+    chip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    chipText: { fontSize: 12, fontWeight: '600' },
     list: { padding: 16, gap: 12, paddingBottom: 100 },
     card: {
       backgroundColor: colors.card,
